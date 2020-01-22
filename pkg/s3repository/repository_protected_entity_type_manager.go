@@ -259,8 +259,7 @@ func (this *ProtectedEntityTypeManager) Copy(ctx context.Context, sourcePE astro
 
 func (this *ProtectedEntityTypeManager) CopyFromInfo(ctx context.Context, sourcePEInfo astrolabe.ProtectedEntityInfo,
 	options astrolabe.CopyCreateOptions) (astrolabe.ProtectedEntity, error) {
-
-	return nil, nil
+		return this.copyInt(ctx, sourcePEInfo, options, nil, nil)
 }
 
 func (this *ProtectedEntityTypeManager) copyInt(ctx context.Context, sourcePEInfo astrolabe.ProtectedEntityInfo,
@@ -305,7 +304,8 @@ func (this *ProtectedEntityTypeManager) copyInt(ctx context.Context, sourcePEInf
 	combinedTransports := []astrolabe.DataTransport{}
 
 	rPEInfo := astrolabe.NewProtectedEntityInfo(sourcePEInfo.GetID(), sourcePEInfo.GetName(),
-		dataTransports, metadataTransports, combinedTransports, sourcePEInfo.GetComponentIDs())
+		sourcePEInfo.GetSize(),	dataTransports, metadataTransports, combinedTransports,
+		sourcePEInfo.GetComponentIDs())
 
 	rpe := ProtectedEntity{
 		rpetm:  this,
@@ -323,24 +323,36 @@ func (this *ProtectedEntityTypeManager) copyInt(ctx context.Context, sourcePEInf
 	return rpe, nil
 }
 
-func (this *ProtectedEntityTypeManager) getDataTransports(id astrolabe.ProtectedEntityID) ([]astrolabe.DataTransport,
-	[]astrolabe.DataTransport,
-	[]astrolabe.DataTransport, error) {
-	dataS3URL := this.dataName(id)
-	data := []astrolabe.DataTransport{
-		astrolabe.NewDataTransportForS3URL(dataS3URL),
+func (this *ProtectedEntityTypeManager) Delete(ctx context.Context, id astrolabe.ProtectedEntityID) error {
+	if id.GetPeType() != this.typeName {
+		return errors.New(id.GetPeType() + " is not of type " + this.typeName)
 	}
 
-	mdS3URL := dataS3URL + ".md"
-
-	md := []astrolabe.DataTransport{
-		astrolabe.NewDataTransportForS3URL(mdS3URL),
+	peToDelete, err := this.GetProtectedEntity(ctx, id)
+	if err != nil {
+		return err
+	}
+	peInfoName := this.peinfoName(peToDelete.GetID())
+	deleteObjects := []*s3.ObjectIdentifier{
+		&s3.ObjectIdentifier{
+			Key:       aws.String(peInfoName),
+		},
+	}
+	deleteObjectsInput := s3.DeleteObjectsInput{
+		Bucket:                    aws.String(this.bucket),
+		Delete:                    & s3.Delete{
+			Objects: deleteObjects,
+		},
+		MFA:                       nil,
+		RequestPayer:              nil,
 	}
 
-	combinedS3URL := dataS3URL + ".zip"
-	combined := []astrolabe.DataTransport{
-		astrolabe.NewDataTransportForS3URL(combinedS3URL),
+	deleteObjectsOutput, err := this.s3.DeleteObjects(&deleteObjectsInput)
+	if err != nil {
+		return err
 	}
-
-	return data, md, combined, nil
+	if len(deleteObjectsOutput.Errors) > 0 {
+		return errors.New("Could not delete all S3 objects")
+	}
+	return nil
 }

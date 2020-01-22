@@ -86,10 +86,10 @@ func getVcConfigFromParams(params map[string]interface{}) (*url.URL, bool, error
 	return &vcUrl, insecure, nil
 }
 
-func getVcUrlFromConfig(config *rest.Config) (*url.URL, bool, error) {
+func getVcUrlFromConfig(ctx context.Context, config *rest.Config) (*url.URL, bool, error) {
 	params := make(map[string]interface{})
 
-	err := retrievePlatformInfoFromConfig(config, params, nil)
+	err := retrievePlatformInfoFromConfig(ctx, config, params, nil)
 	if err != nil {
 		return nil, false, errors.Errorf("Failed to retrieve VC config secret: %+v", err)
 	}

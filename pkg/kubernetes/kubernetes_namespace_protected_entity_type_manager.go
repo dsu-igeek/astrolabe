@@ -18,6 +18,7 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/astrolabe/pkg/astrolabe"
 
@@ -34,8 +35,16 @@ type KubernetesNamespaceProtectedEntityTypeManager struct {
 
 func NewKubernetesNamespaceProtectedEntityTypeManagerFromConfig(params map[string]interface{}, s3URLBase string,
 	logger logrus.FieldLogger) (*KubernetesNamespaceProtectedEntityTypeManager, error) {
-	masterURL := params["masterURL"].(string)
-	kubeconfigPath := params["kubeconfigPath"].(string)
+	masterURLObj := params["masterURL"]
+	masterURL := ""
+	if masterURLObj != nil {
+		masterURL = masterURLObj.(string)
+	}
+	kubeconfgPathObj := params["kubeconfigPath"]
+	kubeconfigPath := ""
+	if kubeconfgPathObj != nil {
+		kubeconfigPath = kubeconfgPathObj.(string)
+	}
 	config, err := clientcmd.BuildConfigFromFlags(masterURL, kubeconfigPath)
 	if err != nil {
 		return nil, err
@@ -62,7 +71,7 @@ func (this *KubernetesNamespaceProtectedEntityTypeManager) GetTypeName() string 
 
 func (this *KubernetesNamespaceProtectedEntityTypeManager) GetProtectedEntity(ctx context.Context, id astrolabe.ProtectedEntityID) (
 	astrolabe.ProtectedEntity, error) {
-	return nil, nil
+	return this.namespaces[id.GetID()], nil
 }
 
 func (this *KubernetesNamespaceProtectedEntityTypeManager) GetProtectedEntities(ctx context.Context) ([]astrolabe.ProtectedEntityID, error) {
@@ -83,7 +92,7 @@ func (this *KubernetesNamespaceProtectedEntityTypeManager) loadNamespaceEntities
 	for _, namespace := range namespaceList.Items {
 		k8snsPE, err := NewKubernetesNamespaceProtectedEntity(this, &namespace)
 		if err == nil {
-			key := k8snsPE.id.String()
+			key := k8snsPE.id.GetID()
 			if _, exists := this.namespaces[key]; !exists {
 				this.namespaces[key] = k8snsPE
 			}
@@ -100,4 +109,8 @@ func (this *KubernetesNamespaceProtectedEntityTypeManager) Copy(ctx context.Cont
 
 func (this *KubernetesNamespaceProtectedEntityTypeManager) CopyFromInfo(ctx context.Context, pe astrolabe.ProtectedEntityInfo, options astrolabe.CopyCreateOptions) (astrolabe.ProtectedEntity, error) {
 	return nil, nil
+}
+
+func (this *KubernetesNamespaceProtectedEntityTypeManager) Delete(ctx context.Context, id astrolabe.ProtectedEntityID) error {
+	return errors.New("Not implemented")
 }

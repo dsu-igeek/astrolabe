@@ -331,14 +331,14 @@ Protected entity data is accessed as:
 
 Raw data for the object
 
-    /s3/<service>/<service id>
+    /<service>/<protected entity id>
     
 Combined zip file including metadata, PE info, raw data and combined zip files from all component PEs
 
-     /s3/<service>/<service id>.zip
+     /s3/<service>/<protected entity id>.zip
 Metadata for the object (this is service specific, not the PE info)
 
-     /s3/<service>/<service id>.md
+     /s3/<service>/<protected entity id>.md
 The S3 API also provides a copy interface.  Uploading a zip file into the
 copy bucket will cause the protected entities described in the zip file to be
 reconstituted.  The data for the entities may be contained in the zip file or it

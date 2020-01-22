@@ -42,42 +42,42 @@ func OpenFCD(serverName string, thumbPrint string, userName string, password str
 		flags,
 		readOnly,
 		transportMode)
-	err := gDiskLib.PrepareForAccess(globalParams)
-	if err != nil {
-		return DiskReaderWriter{}, err
+	res := gDiskLib.PrepareForAccess(globalParams)
+	if res != nil {
+		return DiskReaderWriter{}, res
 	}
-	conn, err := gDiskLib.ConnectEx(globalParams)
-	if err != nil {
+	conn, res := gDiskLib.ConnectEx(globalParams)
+	if res != nil {
 		gDiskLib.EndAccess(globalParams)
-		return DiskReaderWriter{}, err
+		return DiskReaderWriter{}, res
 	}
 	dli, err := gDiskLib.Open(conn, globalParams)
+	diskHandle := NewDiskHandle(dli, conn, globalParams)
 	if err != nil {
 		gDiskLib.Disconnect(conn)
 		gDiskLib.EndAccess(globalParams)
-		return DiskReaderWriter{}, err
+		return DiskReaderWriter{}, res
 	}
-	diskHandle := NewDiskHandle(dli, conn, globalParams)
 	return NewDiskReaderWriter(diskHandle, logger), nil
 }
 
 func Open(globalParams gDiskLib.ConnectParams, logger logrus.FieldLogger) (DiskReaderWriter, gDiskLib.VddkError) {
-	err := gDiskLib.PrepareForAccess(globalParams)
-	if err != nil {
-		return DiskReaderWriter{}, err
+	res := gDiskLib.PrepareForAccess(globalParams)
+	if res != nil {
+		return DiskReaderWriter{}, res
 	}
-	conn, err := gDiskLib.ConnectEx(globalParams)
-	if err != nil {
+	conn, res := gDiskLib.ConnectEx(globalParams)
+	if res != nil {
 		gDiskLib.EndAccess(globalParams)
-		return DiskReaderWriter{}, err
+		return DiskReaderWriter{}, res
 	}
 	dli, err := gDiskLib.Open(conn, globalParams)
+	diskHandle := NewDiskHandle(dli, conn, globalParams)
 	if err != nil {
 		gDiskLib.Disconnect(conn)
 		gDiskLib.EndAccess(globalParams)
-		return DiskReaderWriter{}, err
+		return DiskReaderWriter{}, res
 	}
-	diskHandle := NewDiskHandle(dli, conn, globalParams)
 	return NewDiskReaderWriter(diskHandle, logger), nil
 }
 
@@ -136,7 +136,8 @@ func (this DiskReaderWriter) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 func (this DiskReaderWriter) Close() error {
-	return this.diskHandle.Close()
+	err := this.diskHandle.Close()
+	return err
 }
 
 func NewDiskReaderWriter(diskHandle DiskConnectHandle, logger logrus.FieldLogger) DiskReaderWriter {
@@ -195,9 +196,9 @@ func (this DiskConnectHandle) ReadAt(p []byte, off int64) (n int, err error) {
 	// Start missing aligned part
 	if off%gDiskLib.VIXDISKLIB_SECTOR_SIZE != 0 {
 		tmpBuf := make([]byte, gDiskLib.VIXDISKLIB_SECTOR_SIZE)
-		err := gDiskLib.Read(this.dli, (uint64)(startSector), 1, tmpBuf)
-		if err != nil {
-			return 0, mapError(err)
+		res := gDiskLib.Read(this.dli, (uint64)(startSector), 1, tmpBuf)
+		if res != nil {
+			return 0, mapError(res)
 		}
 		srcOff := int(off % gDiskLib.VIXDISKLIB_SECTOR_SIZE)
 		count := gDiskLib.VIXDISKLIB_SECTOR_SIZE - srcOff
@@ -215,9 +216,9 @@ func (this DiskConnectHandle) ReadAt(p []byte, off int64) (n int, err error) {
 	if numAlignedSectors > 0 {
 		desOff := total
 		desEnd := total + numAlignedSectors*gDiskLib.VIXDISKLIB_SECTOR_SIZE
-		err := gDiskLib.Read(this.dli, (uint64)(startSector), (uint64)(numAlignedSectors), p[desOff:desEnd])
-		if err != nil {
-			return total, mapError(err)
+		res := gDiskLib.Read(this.dli, (uint64)(startSector), (uint64)(numAlignedSectors), p[desOff:desEnd])
+		if res != nil {
+			return total, mapError(res)
 		}
 		startSector = startSector + int64(numAlignedSectors)
 		total = total + numAlignedSectors*gDiskLib.VIXDISKLIB_SECTOR_SIZE
@@ -225,9 +226,9 @@ func (this DiskConnectHandle) ReadAt(p []byte, off int64) (n int, err error) {
 	// End missing aligned part
 	if (len(p) - total) > 0 {
 		tmpBuf := make([]byte, gDiskLib.VIXDISKLIB_SECTOR_SIZE)
-		err := gDiskLib.Read(this.dli, (uint64)(startSector), 1, tmpBuf)
-		if err != nil {
-			return total, mapError(err)
+		res := gDiskLib.Read(this.dli, (uint64)(startSector), 1, tmpBuf)
+		if res != nil {
+			return total, mapError(res)
 		}
 		count := len(p) - total
 		srcEnd := count
@@ -251,9 +252,9 @@ func (this DiskConnectHandle) WriteAt(p []byte, off int64) (n int, err error) {
 	// Start missing aligned part
 	if off%gDiskLib.VIXDISKLIB_SECTOR_SIZE != 0 {
 		tmpBuf := make([]byte, gDiskLib.VIXDISKLIB_SECTOR_SIZE)
-		err := gDiskLib.Read(this.dli, uint64(startSector), 1, tmpBuf)
-		if err != nil {
-			return 0, mapError(err)
+		res := gDiskLib.Read(this.dli, uint64(startSector), 1, tmpBuf)
+		if res != nil {
+			return 0, mapError(res)
 		}
 		desOff := off % gDiskLib.VIXDISKLIB_SECTOR_SIZE
 		count := gDiskLib.VIXDISKLIB_SECTOR_SIZE - desOff
@@ -263,9 +264,9 @@ func (this DiskConnectHandle) WriteAt(p []byte, off int64) (n int, err error) {
 		desEnd := desOff + count
 		srcEnd = srcOff + count
 		copy(tmpBuf[desOff:desEnd], p[srcOff:srcEnd])
-		err = gDiskLib.Write(this.dli, uint64(startSector), 1, tmpBuf)
-		if err != nil {
-			return 0, mapError(err)
+		res = gDiskLib.Write(this.dli, uint64(startSector), 1, tmpBuf)
+		if res != nil {
+			return 0, mapError(res)
 		}
 		startSector = startSector + 1
 		total = total + count
@@ -275,9 +276,9 @@ func (this DiskConnectHandle) WriteAt(p []byte, off int64) (n int, err error) {
 	if (int64(len(p))-total)/gDiskLib.VIXDISKLIB_SECTOR_SIZE > 0 {
 		numSector := (int64(len(p)) - total) / gDiskLib.VIXDISKLIB_SECTOR_SIZE
 		srcEnd = srcOff + numSector*gDiskLib.VIXDISKLIB_SECTOR_SIZE
-		err := gDiskLib.Write(this.dli, uint64(startSector), uint64(numSector), p[srcOff:srcEnd])
-		if err != nil {
-			return int(total), mapError(err)
+		res := gDiskLib.Write(this.dli, uint64(startSector), uint64(numSector), p[srcOff:srcEnd])
+		if res != nil {
+			return int(total), mapError(res)
 		}
 		startSector = startSector + numSector
 		total = total + numSector*gDiskLib.VIXDISKLIB_SECTOR_SIZE
@@ -288,9 +289,9 @@ func (this DiskConnectHandle) WriteAt(p []byte, off int64) (n int, err error) {
 		count := int64(len(p)) - total
 		srcEnd = srcOff + count
 		tmpBuf := make([]byte, gDiskLib.VIXDISKLIB_SECTOR_SIZE)
-		err := gDiskLib.Read(this.dli, uint64(startSector), 1, tmpBuf)
-		if err != nil {
-			return int(total), mapError(err)
+		res := gDiskLib.Read(this.dli, uint64(startSector), 1, tmpBuf)
+		if res != nil {
+			return int(total), mapError(res)
 		}
 		copy(tmpBuf[:count], p[srcOff:srcEnd])
 		err = gDiskLib.Write(this.dli, uint64(startSector), 1, tmpBuf)

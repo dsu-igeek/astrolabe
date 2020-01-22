@@ -28,6 +28,7 @@ import (
 	"github.com/vmware/govmomi/vim25/xml"
 	"github.com/vmware/gvddk/gDiskLib"
 	gvddk_high "github.com/vmware/gvddk/gvddk-high"
+
 	"io"
 	"io/ioutil"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -120,7 +121,7 @@ func (this IVDProtectedEntity) getDiskConnectionParams(ctx context.Context, read
 	fcdId := this.id.GetID()
 	vso, err := this.ipetm.vsom.Retrieve(context.Background(), NewVimIDFromPEID(this.id))
 	if err != nil {
-		//return gDiskLib.DiskHandle{}, err
+		//return gdisklib.DiskHandle{}, err
 		return gDiskLib.ConnectParams{}, err
 	}
 	datastore := vso.Config.Backing.GetBaseConfigInfoBackingInfo().Datastore.String()
@@ -258,6 +259,7 @@ func (this IVDProtectedEntity) GetInfo(ctx context.Context) (astrolabe.Protected
 	retVal := astrolabe.NewProtectedEntityInfo(
 		this.id,
 		vso.Config.Name,
+		vso.Config.CapacityInMB * 1024 * 1024,
 		this.data,
 		this.metadata,
 		this.combined,
