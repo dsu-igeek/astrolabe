@@ -6,9 +6,9 @@ import (
 	"crypto/tls"
 	"net/http"
 
-	errors "github.com/go-openapi/errors"
-	runtime "github.com/go-openapi/runtime"
-	middleware "github.com/go-openapi/runtime/middleware"
+	"github.com/go-openapi/errors"
+	"github.com/go-openapi/runtime"
+	"github.com/go-openapi/runtime/middleware"
 
 	"github.com/vmware-tanzu/astrolabe/gen/restapi/operations"
 )
@@ -33,51 +33,68 @@ func configureAPI(api *operations.AstrolabeAPI) http.Handler {
 
 	api.JSONProducer = runtime.JSONProducer()
 
+	if api.GetAstrolabeTasksNexusTaskNexusIDHandler == nil {
+		api.GetAstrolabeTasksNexusTaskNexusIDHandler = operations.GetAstrolabeTasksNexusTaskNexusIDHandlerFunc(func(params operations.GetAstrolabeTasksNexusTaskNexusIDParams) middleware.Responder {
+			return middleware.NotImplemented("operation operations.GetAstrolabeTasksNexusTaskNexusID has not yet been implemented")
+		})
+	}
+	if api.PostAstrolabeTasksNexusHandler == nil {
+		api.PostAstrolabeTasksNexusHandler = operations.PostAstrolabeTasksNexusHandlerFunc(func(params operations.PostAstrolabeTasksNexusParams) middleware.Responder {
+			return middleware.NotImplemented("operation operations.PostAstrolabeTasksNexus has not yet been implemented")
+		})
+	}
 	if api.CopyProtectedEntityHandler == nil {
 		api.CopyProtectedEntityHandler = operations.CopyProtectedEntityHandlerFunc(func(params operations.CopyProtectedEntityParams) middleware.Responder {
-			return middleware.NotImplemented("operation .CopyProtectedEntity has not yet been implemented")
+			return middleware.NotImplemented("operation operations.CopyProtectedEntity has not yet been implemented")
 		})
 	}
 	if api.CreateSnapshotHandler == nil {
 		api.CreateSnapshotHandler = operations.CreateSnapshotHandlerFunc(func(params operations.CreateSnapshotParams) middleware.Responder {
-			return middleware.NotImplemented("operation .CreateSnapshot has not yet been implemented")
+			return middleware.NotImplemented("operation operations.CreateSnapshot has not yet been implemented")
 		})
 	}
 	if api.DeleteProtectedEntityHandler == nil {
 		api.DeleteProtectedEntityHandler = operations.DeleteProtectedEntityHandlerFunc(func(params operations.DeleteProtectedEntityParams) middleware.Responder {
-			return middleware.NotImplemented("operation .DeleteProtectedEntity has not yet been implemented")
+			return middleware.NotImplemented("operation operations.DeleteProtectedEntity has not yet been implemented")
 		})
 	}
 	if api.GetProtectedEntityInfoHandler == nil {
 		api.GetProtectedEntityInfoHandler = operations.GetProtectedEntityInfoHandlerFunc(func(params operations.GetProtectedEntityInfoParams) middleware.Responder {
-			return middleware.NotImplemented("operation .GetProtectedEntityInfo has not yet been implemented")
+			return middleware.NotImplemented("operation operations.GetProtectedEntityInfo has not yet been implemented")
 		})
 	}
 	if api.GetTaskInfoHandler == nil {
 		api.GetTaskInfoHandler = operations.GetTaskInfoHandlerFunc(func(params operations.GetTaskInfoParams) middleware.Responder {
-			return middleware.NotImplemented("operation .GetTaskInfo has not yet been implemented")
+			return middleware.NotImplemented("operation operations.GetTaskInfo has not yet been implemented")
 		})
 	}
 	if api.ListProtectedEntitiesHandler == nil {
 		api.ListProtectedEntitiesHandler = operations.ListProtectedEntitiesHandlerFunc(func(params operations.ListProtectedEntitiesParams) middleware.Responder {
-			return middleware.NotImplemented("operation .ListProtectedEntities has not yet been implemented")
+			return middleware.NotImplemented("operation operations.ListProtectedEntities has not yet been implemented")
 		})
 	}
 	if api.ListServicesHandler == nil {
 		api.ListServicesHandler = operations.ListServicesHandlerFunc(func(params operations.ListServicesParams) middleware.Responder {
-			return middleware.NotImplemented("operation .ListServices has not yet been implemented")
+			return middleware.NotImplemented("operation operations.ListServices has not yet been implemented")
 		})
 	}
 	if api.ListSnapshotsHandler == nil {
 		api.ListSnapshotsHandler = operations.ListSnapshotsHandlerFunc(func(params operations.ListSnapshotsParams) middleware.Responder {
-			return middleware.NotImplemented("operation .ListSnapshots has not yet been implemented")
+			return middleware.NotImplemented("operation operations.ListSnapshots has not yet been implemented")
+		})
+	}
+	if api.ListTaskNexusHandler == nil {
+		api.ListTaskNexusHandler = operations.ListTaskNexusHandlerFunc(func(params operations.ListTaskNexusParams) middleware.Responder {
+			return middleware.NotImplemented("operation operations.ListTaskNexus has not yet been implemented")
 		})
 	}
 	if api.ListTasksHandler == nil {
 		api.ListTasksHandler = operations.ListTasksHandlerFunc(func(params operations.ListTasksParams) middleware.Responder {
-			return middleware.NotImplemented("operation .ListTasks has not yet been implemented")
+			return middleware.NotImplemented("operation operations.ListTasks has not yet been implemented")
 		})
 	}
+
+	api.PreServerShutdown = func() {}
 
 	api.ServerShutdown = func() {}
 

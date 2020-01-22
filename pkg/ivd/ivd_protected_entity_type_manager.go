@@ -276,7 +276,7 @@ func (this *IVDProtectedEntityTypeManager) copyInt(ctx context.Context, sourcePE
 	}
 
 	if ourVC && existsInOurVC {
-		md, err := FilterLabelsFromMetadataForVslmAPIs(md, this.vcParams, this.logger)
+		md, err := FilterLabelsFromMetadataForVslmAPIs(ctx, md, this.vcParams, this.logger)
 		if err != nil {
 			return nil, err
 		}
@@ -388,4 +388,8 @@ func (this *IVDProtectedEntityTypeManager) getDataTransports(id astrolabe.Protec
 	}
 
 	return data, md, combined, nil
+}
+
+func (this *IVDProtectedEntityTypeManager) Delete(ctx context.Context, id astrolabe.ProtectedEntityID) error {
+	return errors.New("Not implemented")
 }
