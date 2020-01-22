@@ -461,6 +461,9 @@ func init() {
         },
         "name": {
           "type": "string"
+        },
+        "size": {
+          "type": "integer"
         }
       }
     },
@@ -1037,6 +1040,9 @@ func init() {
         },
         "name": {
           "type": "string"
+        },
+        "size": {
+          "type": "integer"
         }
       }
     },

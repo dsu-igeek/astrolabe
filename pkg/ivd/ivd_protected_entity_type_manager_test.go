@@ -88,61 +88,11 @@ func getVcConfigFromParams(params map[string]interface{}) (*url.URL, bool, error
 	return &vcUrl, insecure, nil
 }
 
-// TODO: Used only for test, remove when tests are fixed
-func retrievePlatformInfoFromConfig(config *rest.Config, params map[string]interface{}) error {
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return errors.Errorf("Failed to get k8s clientset from the given config: %v", config)
-	}
-
-	ns := "kube-system"
-	secretApis := clientset.CoreV1().Secrets(ns)
-	vsphere_secrets := []string{"vsphere-config-secret", "csi-vsphere-config"}
-	var secret *k8sv1.Secret
-	for _, vsphere_secret := range vsphere_secrets {
-		secret, err = secretApis.Get(vsphere_secret, metav1.GetOptions{})
-		if err == nil {
-			break
-		}
-	}
-
-	// No valid secret found.
-	if err != nil {
-		return errors.Errorf("Failed to get k8s secret, %s", vsphere_secrets)
-	}
-
-	sEnc := string(secret.Data["csi-vsphere.conf"])
-	lines := strings.Split(sEnc, "\n")
-
-	for _, line := range lines {
-		if strings.Contains(line, "VirtualCenter") {
-			parts := strings.Split(line, "\"")
-			params["VirtualCenter"] = parts[1]
-		} else if strings.Contains(line, "=") {
-			parts := strings.Split(line, "=")
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
-			// Skip the quotes in the value if present
-			if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
-				params[key] = value[1 : len(value)-1]
-			} else {
-				params[key] = value
-			}
-		}
-	}
-
-	// If port is missing, add an entry in the params to use the standard https port
-	if _, ok := params["port"]; !ok {
-		params["port"] = "443"
-	}
-
-	return nil
-}
-
-func getVcUrlFromConfig(config *rest.Config) (*url.URL, bool, error) {
+func getVcUrlFromConfig(ctx context.Context, config *rest.Config) (*url.URL, bool, error) {
 	params := make(map[string]interface{})
 
-	err := retrievePlatformInfoFromConfig(config, params)
+	err := retrievePlatformInfoFromConfig(ctx, config, params)
+
 	if err != nil {
 		return nil, false, errors.Errorf("Failed to retrieve VC config secret: %+v", err)
 	}
@@ -261,7 +211,7 @@ func TestCreateCnsVolume(t *testing.T) {
 	md = FilterLabelsFromMetadataForCnsAPIs(md, "cns", logger)
 
 	ivdParams := make(map[string]interface{})
-	err = retrievePlatformInfoFromConfig(config, ivdParams)
+	err = retrievePlatformInfoFromConfig(ctx, config, ivdParams, logger)
 	if err != nil {
 		t.Fatalf("Failed to retrieve VC config secret: %+v", err)
 	}
@@ -401,7 +351,7 @@ func TestRestoreCnsVolumeFromSnapshot(t *testing.T) {
 	logger.Debugf("IVD md: %v", md.ExtendedMetadata)
 
 	ivdParams := make(map[string]interface{})
-	err = retrievePlatformInfoFromConfig(config, ivdParams)
+	err = retrievePlatformInfoFromConfig(ctx, config, ivdParams, logger)
 	if err != nil {
 		t.Fatalf("Failed to retrieve VC config secret: %+v", err)
 	}

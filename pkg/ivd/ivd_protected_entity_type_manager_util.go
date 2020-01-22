@@ -216,10 +216,46 @@ func findSharedDatastoresFromAllNodeVMs(ctx context.Context, client *vim25.Clien
 	return dsList, nil
 }
 
-func createCnsVolumeWithClusterConfig(ctx context.Context, params map[string]interface{}, config *rest.Config, client *govmomi.Client, cnsClient *cns.Client, md metadata, logger logrus.FieldLogger) (string, error) {
-	logger.Debugf("createCnsVolumeWithClusterConfig called with args, config params and metadata: %v", md)
+func retrievePlatformInfoFromConfig(ctx context.Context, config *rest.Config, params map[string]interface{}, logger logrus.FieldLogger) error {
+	clientSet, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		logger.WithError(err).Errorf("Failed to get k8s clientSet from the given config: %v", config)
+		return err
+	}
 
-	reservedLabelsMap, err := fillInClusterSpecificParams(params, logger)
+	ns := "kube-system"
+	secretApis := clientSet.CoreV1().Secrets(ns)
+	vsphere_secret := "vsphere-config-secret"
+	// v0.18.0 requires context secret, err := secretApis.Get(ctx, vsphere_secret, metav1.GetOptions{})
+	secret, err := secretApis.Get(vsphere_secret, metav1.GetOptions{})
+
+	if err != nil {
+		logger.WithError(err).Errorf("Failed to get k8s secret, %s", vsphere_secret)
+		return err
+	}
+	sEnc := string(secret.Data["csi-vsphere.conf"])
+	lines := strings.Split(sEnc, "\n")
+
+	for _, line := range lines {
+		if strings.Contains(line, "VirtualCenter") {
+			parts := strings.Split(line, "\"")
+			params["VirtualCenter"] = parts[1]
+		} else if strings.Contains(line, "=") {
+			parts := strings.Split(line, "=")
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			params[key] = value[1 : len(value)-1]
+		}
+	}
+
+	return nil
+}
+
+	func createCnsVolumeWithClusterConfig(ctx context.Context, params map[string]interface{}, config *rest.Config, client *govmomi.Client, cnsClient *cns.Client, md metadata, logger logrus.FieldLogger) (string, error) {
+		logger.Debugf("createCnsVolumeWithClusterConfig called with args, config params and metadata: %v", md)
+
+		reservedLabelsMap, err := fillInClusterSpecificParams(ctx, params, logger)
+
 	if err != nil {
 		logger.WithError(err).Error("Failed at calling fillInClusterSpecificParams")
 		return "", err
@@ -298,7 +334,7 @@ func createCnsVolumeWithClusterConfig(ctx context.Context, params map[string]int
 	return volumeId, nil
 }
 
-func fillInClusterSpecificParams(params map[string]interface{}, logger logrus.FieldLogger) (map[string]string, error) {
+func fillInClusterSpecificParams(ctx context.Context, params map[string]interface{}, logger logrus.FieldLogger) (map[string]string, error) {
 	clusterId, err := GetClusterFromParamsMap(params)
 	if err != nil {
 		logger.WithError(err).Errorf("Failed to get Cluster params")
@@ -330,12 +366,13 @@ func fillInClusterSpecificParams(params map[string]interface{}, logger logrus.Fi
 	return reservedLabelsMap, nil
 }
 
-func FilterLabelsFromMetadataForVslmAPIs(md metadata, params map[string]interface{}, logger logrus.FieldLogger) (metadata, error) {
+func FilterLabelsFromMetadataForVslmAPIs(ctx context.Context, md metadata, params map[string]interface{}, logger logrus.FieldLogger) (metadata, error) {
 	var kvsList []vim25types.KeyValue
 
 	logger.Debugf("labels of CNS volume before filtering: %v", md.ExtendedMetadata)
 
-	reservedLabelsMap, err := fillInClusterSpecificParams(params, logger)
+	reservedLabelsMap, err := fillInClusterSpecificParams(ctx, params, logger)
+
 	if err != nil {
 		logger.WithError(err).Error("Failed at calling fillInClusterSpecificParams")
 		return metadata{}, err
@@ -450,3 +487,4 @@ func GetInsecureFlagFromParamsMap(params map[string]interface{}) (bool, error) {
 	}
 	return false, err
 }
+

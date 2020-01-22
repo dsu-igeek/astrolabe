@@ -21,9 +21,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/astrolabe/pkg/astrolabe"
-	"github.com/pkg/errors"
 	"io"
 	"strings"
 )
@@ -259,8 +259,7 @@ func (this *ProtectedEntityTypeManager) Copy(ctx context.Context, sourcePE astro
 
 func (this *ProtectedEntityTypeManager) CopyFromInfo(ctx context.Context, sourcePEInfo astrolabe.ProtectedEntityInfo,
 	options astrolabe.CopyCreateOptions) (astrolabe.ProtectedEntity, error) {
-
-	return nil, nil
+		return this.copyInt(ctx, sourcePEInfo, options, nil, nil)
 }
 
 func (this *ProtectedEntityTypeManager) copyInt(ctx context.Context, sourcePEInfo astrolabe.ProtectedEntityInfo,
@@ -305,7 +304,8 @@ func (this *ProtectedEntityTypeManager) copyInt(ctx context.Context, sourcePEInf
 	combinedTransports := []astrolabe.DataTransport{}
 
 	rPEInfo := astrolabe.NewProtectedEntityInfo(sourcePEInfo.GetID(), sourcePEInfo.GetName(),
-		dataTransports, metadataTransports, combinedTransports, sourcePEInfo.GetComponentIDs())
+		sourcePEInfo.GetSize(),	dataTransports, metadataTransports, combinedTransports,
+		sourcePEInfo.GetComponentIDs())
 
 	rpe := ProtectedEntity{
 		rpetm:  this,
@@ -340,7 +340,6 @@ func (this *ProtectedEntityTypeManager) getDataTransports(id astrolabe.Protected
 	data := []astrolabe.DataTransport{
 		astrolabe.NewDataTransportForS3URL(dataS3URL),
 	}
-
 	mdS3URL := dataS3URL + ".md"
 
 	md := []astrolabe.DataTransport{
@@ -353,4 +352,38 @@ func (this *ProtectedEntityTypeManager) getDataTransports(id astrolabe.Protected
 	}
 
 	return data, md, combined, nil
+}
+
+func (this *ProtectedEntityTypeManager) Delete(ctx context.Context, id astrolabe.ProtectedEntityID) error {
+	if id.GetPeType() != this.typeName {
+		return errors.New(id.GetPeType() + " is not of type " + this.typeName)
+	}
+
+	peToDelete, err := this.GetProtectedEntity(ctx, id)
+	if err != nil {
+		return err
+	}
+	peInfoName := this.peinfoName(peToDelete.GetID())
+	deleteObjects := []*s3.ObjectIdentifier{
+		&s3.ObjectIdentifier{
+			Key:       aws.String(peInfoName),
+		},
+	}
+	deleteObjectsInput := s3.DeleteObjectsInput{
+		Bucket:                    aws.String(this.bucket),
+		Delete:                    & s3.Delete{
+			Objects: deleteObjects,
+		},
+		MFA:                       nil,
+		RequestPayer:              nil,
+	}
+
+	deleteObjectsOutput, err := this.s3.DeleteObjects(&deleteObjectsInput)
+	if err != nil {
+		return err
+	}
+	if len(deleteObjectsOutput.Errors) > 0 {
+		return errors.New("Could not delete all S3 objects")
+	}
+	return nil
 }
