@@ -41,8 +41,9 @@ type ProtectedEntityTypeManager struct {
 	logger    logrus.FieldLogger
 }
 
-func NewS3RepositoryProtectedEntityTypeManager(typeName string, session session.Session, bucket string, logger logrus.FieldLogger) (*ProtectedEntityTypeManager, error) {
-	objectPrefix := "backups/vsphere-volumes-repo/" + typeName + "/"
+func NewS3RepositoryProtectedEntityTypeManager(typeName string, session session.Session, bucket string,
+	prefix string,	logger logrus.FieldLogger) (*ProtectedEntityTypeManager, error) {
+	objectPrefix := prefix + "/" + typeName + "/"
 	peinfoPrefix := objectPrefix + "peinfo/"
 	mdPrefix := objectPrefix + "md/"
 	dataPrefix := objectPrefix + "data/"
@@ -64,7 +65,7 @@ func NewS3RepositoryProtectedEntityTypeManager(typeName string, session session.
  * Protected Entities are stored in the S3 repo as 1-3 files.  The peinfo file contains the Protected Entity JSON,
  * the md file contains the Protected Entity metadata, if present and the data file contains the Protected Entity data,
  * if present.  The basic structure of the repository is
- *    <bucket>/astrolabe-repo/<type>/{peinfo, md, data}/<peid>[, .md, .data]
+ *    <bucket>/<user specified prefix>/<type>/{peinfo, md, data}/<peid>[, .md, .data]
  * The PEID must have a snapshot component
  * For example, an IVD would be represented as three S3 objects:
  *     /astrolabe-repo/ivd/peinfo/ivd:e1c3cb20-db88-4c1c-9f02-5f5347e435d5:67469e1c-50a8-4f63-9a6a-ad8a2265197c
