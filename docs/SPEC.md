@@ -87,7 +87,7 @@ Protected Entities represent objects that can be protected.  A Protected Entity 
 A Protected Entity Graph is defined as a root Protected Entity and all of its component Protected Entities.  Component Pes are 
 ### IDs
 Protected Entities are identified by Protected Entity IDs.  The ID specifies a type, object ID and, optionally, a snapshot ID.  If the snapshot ID is not specified, the current version of the protected entity is specified.
-The object ID and snapshot ID formats are controlled by the service and can consist of [A-Z][a-z][0-9][-][/][_][.]  Any other non-alphanumeric characters are forbidden.  In the event that a service’s native object ID or snapshot ID needs a special character, the service should use an encoding format such as UUENCODE to translate to strict alpha-numerics.
+The object ID and snapshot ID formats are controlled by the service and can consist of [A-Z][a-z][0-9][-][/][_][.]  Any other non-alphanumeric cacters are forbidden.  In the event that a service’s native object ID or snapshot ID needs a special character, the service should use an encoding format such as UUENCODE to translate to strict alpha-numerics.
 A Protected Entity ID is written as <type>:<object ID>[:snapshot ID]
 #### vSphere IVD Example
 For example, a virtual disk is referred to as:
@@ -191,7 +191,7 @@ this protected entity.
 # Server Types
 All Astrolabe servers support both the control and data paths.  There are two styles of 
 server defined currently, Active and Repository
-## Active Archne Server
+## Active Astrolabe Server
 An Active Astrolabe Server provides an interface to one or more services.  The services are
 backed by the real service and will usually be providing the actual service,
 such as virtual disk, virtual machines, or Kubernetes.  Changes to the state of the
@@ -203,12 +203,24 @@ actions are taken via the Astrolabe APIs.  A Repository server may be able to st
 all Protected Entity types.  In that case, the Astrolabe List Services API may return a
 single service, "*" (it may also list other named services as well).
 # APIs
+Astrolabe defines two different API paths currently: the RESTful API and a Kubernetes CRD based API.
+The Astrolabe client handles both APIs transparently.  Both APIs provide the same set of operations and
+semantics.
+## RESTful API
+The RESTful API is provided by services which fall outside the scope of Kubernetes.
+## Kubernetes CRD API
+The Kubernetes API provides the abiity to snapshot and extract data from protected entities 
+represented by Kubernetes Customer Resources.  For each Protected Entity resource, Astrolabe CRDs
+are registered for the operations it supports.  In order to discover the Protected Entities supported
+by an installation, the Astrolabe CRDs are queried.  Operations are executed by creating the appropriate
+CR.  The actual operation can be executed in different ways.  Services/Operators which implements Astrolabe
+can execute the CRD.  Out-of-band operators are also provided
 ## Control Path
 ### Astrolabe
 Repository servers 
 ### Service
 #### Copy
-Copy will update or create an based on a ProtectedEntity JSON. The data paths must be specified in the JSON.   
+Copy will update or create based on a ProtectedEntity JSON. The data paths must be specified in the JSON.   
 There is no option to embed data on this path, for a self-contained or partially self-contained object, 
 use the restore from zip file option in the S3 API
 REST API
