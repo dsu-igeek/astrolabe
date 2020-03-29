@@ -64,6 +64,31 @@ Oracle, SQLServer and Postgres databases.  The RDS PE supports snapshotting.  As
 it is not possible to access data or metadata via the PE URIs, however, new RDS databases can be created
 from a snapshot.
 
+### S3 Bucket
+S3 buckets represent a grouping within an S3 object store.  S3 buckets are used for a variety of purposes, from the
+Astrolabe point-of-view, the interesting distinction of a bucket is whether or not it can be snapshotted or duplicated.
+AWS S3 has a form of versioning, but does not support actual snapshotting, however other S3 compatible object stores
+could support this.  Whether or not a bucket can be duplicated
+depends more on the size of the bucket than an intrinsic property of S3 as individual buckets do not have a limit on
+either the number of objects that can be stored or the aggregate size of the objects.  At small scales, it may be feasible
+and desirable to copy the contents of a bucket.  At large scales it may be infeasible to duplicate the contents of the
+bucket.
+
+### Storage Service
+
+## Protected Entity capabilities
+### Externalization
+Most Protected Entities provide a way to externalize their state.  Some do not and some do not provide an efficent way
+to externalize their state.
+
+|Volume Type|Externalizable|Difference Tracking|
+|-----------|--------------|-------------------|
+|vSphere |Y|Y|
+|EBS|Y|Y|
+|GKE|Y|N|
+
+
+
 # State Document
 One of the key capabilities in Astrolabe is the ability to generate a document that describes
 the state of an application.  This document is the Protected Entity graph, flattened and expressed
@@ -75,6 +100,9 @@ of a Snapshot State Document are guaranteed not to change.
 One way to handle the backup of a Protected Entity is to simply copy the State Document.  If the snapshots
 for all of the components are durable snapshots, such as EBS snapshots or RDS snapshots, this is sufficient to
 allow for the state to be restored.
+
+
+
 
 
 
