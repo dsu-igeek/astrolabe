@@ -117,7 +117,30 @@ func (this OpenAPIAstrolabeHandler) CreateSnapshot(params operations.CreateSnaps
 }
 
 func (this OpenAPIAstrolabeHandler) ListSnapshots(params operations.ListSnapshotsParams) middleware.Responder {
-	return nil
+	petm := this.pem.GetProtectedEntityTypeManager(params.Service)
+	if petm == nil {
+
+	}
+	peid, err := astrolabe.NewProtectedEntityIDFromString(params.ProtectedEntityID)
+	if err != nil {
+
+	}
+	pe, err := petm.GetProtectedEntity(context.Background(), peid)
+	if err != nil {
+
+	}
+	snapshots, err := pe.ListSnapshots(context.Background())
+	mpeids := make([]models.ProtectedEntityID, len(snapshots))
+	for snidNum, snid := range snapshots {
+		mpeids[snidNum] = models.ProtectedEntityID(peid.IDWithSnapshot(snid).String())
+	}
+
+	peList := models.ProtectedEntityList{
+		List:      mpeids,
+		Truncated: false,
+	}
+	return operations.NewListSnapshotsOK().WithPayload(&peList)
+
 }
 
 
