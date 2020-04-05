@@ -20,26 +20,87 @@ import (
 	"archive/zip"
 	"context"
 	"encoding/json"
+	"github.com/pkg/errors"
 	"io"
 )
 
-func ZipProtectedEntity(ctx context.Context, entity ProtectedEntity, writer io.Writer) error {
+func ZipProtectedEntity(ctx context.Context, pe ProtectedEntity, writer io.Writer) error {
 	zipWriter := zip.NewWriter(writer)
-	peInfo, err := entity.GetInfo(ctx)
+	peInfo, err := pe.GetInfo(ctx)
 	if (err != nil) {
-		return err
+		return errors.Wrapf(err, "Failed to get info for %s", pe.GetID().String())
 	}
 	jsonBuf, err := json.Marshal(peInfo)
 	if (err != nil) {
-		return err
+		return errors.Wrapf(err, "Failed to get marshal info for %s", pe.GetID().String())
 	}
-	peInfoWriter, err := zipWriter.Create(entity.GetID().String() + ".peinfo")
+	peInfoWriter, err := zipWriter.Create(pe.GetID().String() + ".peinfo")
 	if (err != nil) {
-		return err
+		return errors.Wrapf(err, "Failed to create peinfo zip writer for %s", pe.GetID().String())
 	}
-	_, err = peInfoWriter.Write(jsonBuf)
+	var bytesWritten int64
+	jsonWritten, err := peInfoWriter.Write(jsonBuf)
 	if (err != nil) {
-		return err
+		return errors.Wrapf(err, "Failed to write info json for %s", pe.GetID().String())
+	}
+	bytesWritten += int64(jsonWritten)
+
+
+	mdReader, err := pe.GetMetadataReader(ctx)
+	if (err != nil) {
+		return errors.Wrapf(err, "Failed to get metadata reader for %s", pe.GetID().String())
+	}
+	if mdReader != nil {
+		peMDWriter, err := zipWriter.Create(pe.GetID().String() + ".md")
+		if (err != nil) {
+			return errors.Wrapf(err, "Failed to create metadata zip writer for %s", pe.GetID().String())
+		}
+		mdWritten, err := io.Copy(peMDWriter, mdReader)
+		if (err != nil) {
+			return errors.Wrapf(err, "Failed to write metadata for %s", pe.GetID().String())
+		}
+		bytesWritten += mdWritten
+	}
+
+	dataReader, err := pe.GetDataReader(ctx)
+	if (err != nil) {
+		return errors.Wrapf(err, "Failed to get data reader for %s", pe.GetID().String())
+	}
+	if dataReader != nil {
+		peDataWriter, err := zipWriter.Create(pe.GetID().String() + ".data")
+		if (err != nil) {
+			return errors.Wrapf(err, "Failed to create data zip writer for %s", pe.GetID().String())
+		}
+		dataWritten, err := io.Copy(peDataWriter, dataReader)
+		if (err != nil) {
+			return errors.Wrapf(err, "Failed to write data for %s", pe.GetID().String())
+		}
+		bytesWritten += dataWritten
+	}
+	components, err := pe.GetComponents(ctx)
+	if (err != nil) {
+		return errors.Wrapf(err, "Failed to get components for %s", pe.GetID().String())
+	}
+
+	for _,curComponent := range components {
+		componentWriter, err := zipWriter.Create("components/" + curComponent.GetID().String() + ".zip")
+		if (err != nil) {
+			return errors.Wrapf(err, "Failed to get create component writer for component %s of %s",
+				curComponent.GetID().String(), pe.GetID().String())
+		}
+		err = ZipProtectedEntity(ctx, curComponent, componentWriter)
+		if (err != nil) {
+			return errors.Wrapf(err, "Failed to write zip for component %s of %s",
+				curComponent.GetID().String(), pe.GetID().String())
+		}
+	}
+	err = zipWriter.Flush()
+	if (err != nil) {
+		return errors.Wrapf(err, "Zipwriter flush failed for for %s", pe.GetID().String())
+	}
+	err = zipWriter.Close()
+	if (err != nil) {
+		return errors.Wrapf(err, "Zipwriter close failed for for %s", pe.GetID().String())
 	}
 	return nil
 }
