@@ -61,6 +61,6 @@ func (this EBSProtectedEntity) GetDataReader(ctx context.Context) (io.ReadCloser
 	panic("implement me")
 }
 
-func (this EBSProtectedEntity) GetMetadataReader(ctx context.Context) (io.Reader, error) {
+func (this EBSProtectedEntity) GetMetadataReader(ctx context.Context) (io.ReadCloser, error) {
 	panic("implement me")
 }
