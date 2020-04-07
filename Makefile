@@ -51,3 +51,6 @@ docs-gen: docs/api/index.html
 
 docs/api/index.html: openapi/astrolabe_api.yaml
 	java -jar bin/swagger-codegen-cli-2.2.1.jar generate -o docs/api -i openapi/astrolabe_api.yaml -l html2
+
+client-gen:
+	bin/swagger_linux_amd64 generate client -f openapi/astrolabe_api.yaml -A astrolabe -t gen
