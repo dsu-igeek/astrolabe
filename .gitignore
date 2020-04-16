@@ -1,2 +1,3 @@
 .idea
 cmd/astrolabe_server/astrolabe_server
+pkg/gvddk/vmware-vix-disklib-distrib
