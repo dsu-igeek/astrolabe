@@ -30,6 +30,9 @@ astrolabe_cli:
 astrolabe: 
 	cd pkg/astrolabe; go build
 
+ebs: 
+	cd pkg/ebs; go build
+
 ivd: 
 	cd pkg/ivd; go build
 
