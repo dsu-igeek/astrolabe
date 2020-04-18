@@ -44,11 +44,19 @@ func NewDataTransport(transportType string, params map[string]string) DataTransp
 	}
 }
 
+const(
+	S3TransportType = "s3"
+	S3URLParam = "url"
+	S3HostParam = "host"
+	S3BucketParam = "bucket"
+	S3KeyParam = "key"
+)
+
 func NewDataTransportForS3URL(url string) DataTransport {
 	return DataTransport{
-		transportType: "s3",
+		transportType: S3TransportType,
 		params: map[string]string{
-			"url": url,
+			S3URLParam: url,
 		},
 	}
 }
@@ -56,12 +64,12 @@ func NewDataTransportForS3URL(url string) DataTransport {
 func NewDataTransportForS3(host string, bucket string, key string) DataTransport {
 	url := "http://" + host + "/" + bucket + "/" + key
 	return DataTransport{
-		transportType: "s3",
+		transportType: S3TransportType,
 		params: map[string]string{
-			"url":    url,
-			"host":   host,
-			"bucket": bucket,
-			"key":    key,
+			S3URLParam:    url,
+			S3HostParam:   host,
+			S3BucketParam: bucket,
+			S3KeyParam:    key,
 		},
 	}
 }
