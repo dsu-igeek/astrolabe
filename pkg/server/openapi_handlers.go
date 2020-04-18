@@ -149,7 +149,7 @@ func (this OpenAPIAstrolabeHandler) CopyProtectedEntity(params operations.CopyPr
 	if petm == nil {
 
 	}
-	pei, err := astrolabe.NewProtectedEntityInfoFromModel(*params.Body)
+	pei, err := astrolabe.NewProtectedEntityInfoFromModel(params.Body)
 	if err != nil {
 
 	}

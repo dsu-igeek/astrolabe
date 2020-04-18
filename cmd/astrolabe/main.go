@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
+	"github.com/vmware-tanzu/astrolabe/gen/client"
 	"github.com/vmware-tanzu/astrolabe/pkg/astrolabe"
+	client2 "github.com/vmware-tanzu/astrolabe/pkg/client"
 	"github.com/vmware-tanzu/astrolabe/pkg/server"
 	"io"
 	"log"
@@ -16,7 +19,6 @@ func main() {
 		Flags: []cli.Flag {
 			&cli.StringFlag{
 			Name: "host",
-			Value: "localhost:1323",
 			Usage: "Astrolabe server",
 			},
 			&cli.BoolFlag{
@@ -29,7 +31,6 @@ func main() {
 			&cli.StringFlag{
 				Name: "confDir",
 				Usage: "Configuration directory",
-				Required: true,
 			},
 		},
 		Commands: []*cli.Command{
@@ -42,6 +43,12 @@ func main() {
 				Name: "ls",
 				Usage:	"lists entities for a type",
 				Action: ls,
+			},
+			{
+				Name: "show",
+				Usage: "shows info for a protected entity",
+				ArgsUsage: "<protected entity id>",
+				Action: show,
 			},
 			{
 				Name: "lssn",
@@ -76,14 +83,35 @@ func main() {
 	}
 }
 
-func setupProtectedEntityManager(c *cli.Context) (astrolabe.ProtectedEntityManager) {
+func setupProtectedEntityManager(c *cli.Context) (astrolabe.ProtectedEntityManager, error) {
 	confDirStr := c.String("confDir")
-	_, pem := server.NewProtectedEntityManager(confDirStr, 0)
+	var pem astrolabe.ProtectedEntityManager
+	if confDirStr != "" {
+		_, pem = server.NewProtectedEntityManager(confDirStr, 0)
+	}
+	host := c.String("host")
+	if host != "" {
+		insecure := c.Bool("insecure")
+		transport := client.DefaultTransportConfig()
+		transport.Host = host
+		if insecure {
+			transport.Schemes = []string{"http"}
+		}
 
-	return pem
+		restClient := client.NewHTTPClientWithConfig(nil, transport)
+		var err error
+		pem, err = client2.NewClientProtectedEntityManager(restClient)
+		if err != nil {
+			return nil, errors.Wrap(err, "Failed to create new ClientProtectedEntityManager")
+		}
+	}
+	return pem, nil
 }
 func types (c *cli.Context) error {
-	pem := setupProtectedEntityManager(c)
+	pem, err := setupProtectedEntityManager(c)
+	if err != nil {
+		log.Fatalf("Could not setup protected entity manager, err =%v", err)
+	}
 	for _, curPETM:= range pem.ListEntityTypeManagers() {
 		fmt.Println(curPETM.GetTypeName())
 	}
@@ -91,7 +119,10 @@ func types (c *cli.Context) error {
 }
 
 func ls (c *cli.Context) error {
-	pem := setupProtectedEntityManager(c)
+	pem, err := setupProtectedEntityManager(c)
+	if err != nil {
+		log.Fatalf("Could not setup protected entity manager, err =%v", err)
+	}
 	peType := c.Args().First()
 	petm := pem.GetProtectedEntityTypeManager(peType)
 	if petm == nil {
@@ -115,7 +146,10 @@ func lssn (c *cli.Context) error {
 		log.Fatalf("Could not parse protected entity ID %s, err: %v", peIDStr, err)
 	}
 
-	pem := setupProtectedEntityManager(c)
+	pem, err := setupProtectedEntityManager(c)
+	if err != nil {
+		log.Fatalf("Could not setup protected entity manager, err =%v", err)
+	}
 
 	pe, err := pem.GetProtectedEntity(context.TODO(), peID)
 	if err != nil {
@@ -134,6 +168,31 @@ func lssn (c *cli.Context) error {
 	return nil
 }
 
+func show (c *cli.Context) error {
+	peIDStr := c.Args().First()
+	peID, err := astrolabe.NewProtectedEntityIDFromString(peIDStr)
+	if err != nil {
+		log.Fatalf("Could not parse protected entity ID %s, err: %v", peIDStr, err)
+	}
+
+	pem, err := setupProtectedEntityManager(c)
+	if err != nil {
+		log.Fatalf("Could not setup protected entity manager, err =%v", err)
+	}
+
+	pe, err := pem.GetProtectedEntity(context.TODO(), peID)
+	if err != nil {
+		log.Fatalf("Could not retrieve protected entity ID %s, err: %v", peIDStr, err)
+	}
+
+	info, err := pe.GetInfo(context.TODO())
+	if err != nil {
+		log.Fatalf("Could not retrieve info for %s, err: %v", peIDStr, err)
+	}
+	fmt.Printf("%v\n", info)
+	return nil
+}
+
 func snap (c *cli.Context) error {
 	peIDStr := c.Args().First()
 	peID, err := astrolabe.NewProtectedEntityIDFromString(peIDStr)
@@ -141,7 +200,10 @@ func snap (c *cli.Context) error {
 		log.Fatalf("Could not parse protected entity ID %s, err: %v", peIDStr, err)
 	}
 
-	pem := setupProtectedEntityManager(c)
+	pem, err := setupProtectedEntityManager(c)
+	if err != nil {
+		log.Fatalf("Could not setup protected entity manager, err =%v", err)
+	}
 
 	pe, err := pem.GetProtectedEntity(context.TODO(), peID)
 	if err != nil {
@@ -165,7 +227,10 @@ func rmsn (c *cli.Context) error {
 		log.Fatalf("Protected entity ID %s does not have a snapshot ID", peIDStr)
 	}
 
-	pem := setupProtectedEntityManager(c)
+	pem, err := setupProtectedEntityManager(c)
+	if err != nil {
+		log.Fatalf("Could not setup protected entity manager, err =%v", err)
+	}
 
 	pe, err := pem.GetProtectedEntity(context.TODO(), peID)
 	if err != nil {
@@ -198,7 +263,10 @@ func cp (c *cli.Context) error {
 	if err != nil {
 		destFile = destStr
 	}
-	pem := setupProtectedEntityManager(c)
+	pem, err := setupProtectedEntityManager(c)
+	if err != nil {
+		log.Fatalf("Could not setup protected entity manager, err =%v", err)
+	}
 
 	var reader io.ReadCloser
 	var writer io.WriteCloser

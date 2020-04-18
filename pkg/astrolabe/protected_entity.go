@@ -130,6 +130,10 @@ func NewProtectedEntitySnapshotID(pesiString string) ProtectedEntitySnapshotID {
 	return returnPESI
 }
 
+func NewProtectedEntitySnapshotIDFromModel(mpei models.ProtectedEntitySnapshotID) (ProtectedEntitySnapshotID){
+	return NewProtectedEntitySnapshotID(string(mpei))
+}
+
 func (this ProtectedEntitySnapshotID) GetID() string {
 	return this.id
 }
