@@ -87,7 +87,7 @@ func setupProtectedEntityManager(c *cli.Context) (astrolabe.ProtectedEntityManag
 	confDirStr := c.String("confDir")
 	var pem astrolabe.ProtectedEntityManager
 	if confDirStr != "" {
-		_, pem = server.NewProtectedEntityManager(confDirStr, 0)
+		pem = server.NewProtectedEntityManager(confDirStr)
 	}
 	host := c.String("host")
 	if host != "" {
