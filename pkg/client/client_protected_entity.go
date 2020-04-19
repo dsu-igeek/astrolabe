@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -29,6 +30,7 @@ func NewClientProtectedEntity(id astrolabe.ProtectedEntityID, petm *ClientProtec
 
 func (this ClientProtectedEntity) GetInfo(ctx context.Context) (astrolabe.ProtectedEntityInfo, error) {
 	params := operations.GetProtectedEntityInfoParams{
+		Service: this.petm.typeName,
 		ProtectedEntityID: this.id.String(),
 	}
 	params.SetTimeout(time.Minute)
@@ -87,11 +89,23 @@ func (this ClientProtectedEntity) GetInfoForSnapshot(ctx context.Context, snapsh
 }
 
 func (this ClientProtectedEntity) GetComponents(ctx context.Context) ([]astrolabe.ProtectedEntity, error) {
-	panic("implement me")
+	peInfo, err := this.GetInfo(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed in GetProtectedEntityInfo")
+	}
+	componentIDs := peInfo.GetComponentIDs()
+	returnEntities := make([]astrolabe.ProtectedEntity, len(componentIDs))
+	for curComponentIDNum, curComponentID := range componentIDs {
+		returnEntities[curComponentIDNum], err = this.petm.entityManager.GetProtectedEntity(ctx, curComponentID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Failed in GetProtectedEntity for %s", curComponentID.String())
+		}
+	}
+	return returnEntities, nil
 }
 
 func (this ClientProtectedEntity) GetID() astrolabe.ProtectedEntityID {
-	panic("implement me")
+	return this.id
 }
 
 func (this ClientProtectedEntity) GetDataReader(ctx context.Context) (io.ReadCloser, error) {
@@ -99,13 +113,17 @@ func (this ClientProtectedEntity) GetDataReader(ctx context.Context) (io.ReadClo
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed in GetProtectedEntityInfo")
 	}
-	peInfo.GetDataTransports()
-	panic("implement me")
+	transports := peInfo.GetDataTransports()
+	return getBestReaderForTransports(ctx, transports)
 }
 
 func (this ClientProtectedEntity) GetMetadataReader(ctx context.Context) (io.ReadCloser, error) {
-	panic("implement me")
-}
+	peInfo, err := this.GetInfo(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed in GetProtectedEntityInfo")
+	}
+	transports := peInfo.GetMetadataTransports()
+	return getBestReaderForTransports(ctx, transports)}
 
 func getBestReaderForTransports(ctx context.Context, transports [] astrolabe.DataTransport) (io.ReadCloser, error) {
 	for _, checkTransport := range transports {
@@ -130,8 +148,8 @@ func getReaderForS3Transport(ctx context.Context, s3Transport astrolabe.DataTran
 
 	var reader io.ReadCloser
 	if  ok {
-		key, ok := s3Transport.GetParam(astrolabe.S3KeyParam)
-		if !ok {
+		key, hasKey := s3Transport.GetParam(astrolabe.S3KeyParam)
+		if !hasKey {
 			return nil, errors.New("Missing key param")
 		}
 		input := s3.GetObjectInput{
@@ -145,13 +163,16 @@ func getReaderForS3Transport(ctx context.Context, s3Transport astrolabe.DataTran
 
 		reader = getObjectOutput.Body
 	} else {
-		url, ok := s3Transport.GetParam(astrolabe.S3URLParam)
-		if !ok {
+		url, hasURL := s3Transport.GetParam(astrolabe.S3URLParam)
+		if !hasURL {
 			return nil, errors.New("Missing url param")
 		}
 		response, err := http.Get(url)
 		if err != nil {
 			return nil, errors.Wrapf(err, "S3 GetObject failed, url = %s", url)
+		}
+		if response.StatusCode != http.StatusOK {
+			return nil, errors.New(fmt.Sprintf("Get failed for S3 url %s, status = %s", url, response.Status))
 		}
 		reader = response.Body
 	}

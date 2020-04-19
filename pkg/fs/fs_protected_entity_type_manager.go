@@ -29,19 +29,19 @@ import (
 
 type FSProtectedEntityTypeManager struct {
 	root      string
-	s3URLBase string
+	s3Config  astrolabe.S3Config
 	logger    logrus.FieldLogger
 }
 
 const kTYPE_NAME = "fs"
 
-func NewFSProtectedEntityTypeManagerFromConfig(params map[string]interface{}, s3URLBase string,
+func NewFSProtectedEntityTypeManagerFromConfig(params map[string]interface{},s3Config astrolabe.S3Config,
 	logger logrus.FieldLogger) (*FSProtectedEntityTypeManager, error) {
 	root := params["root"].(string)
 
 	returnTypeManager := FSProtectedEntityTypeManager{
 		root:      root,
-		s3URLBase: s3URLBase,
+		s3Config:  s3Config,
 		logger:    logger,
 	}
 	return &returnTypeManager, nil
@@ -139,20 +139,16 @@ func (this *FSProtectedEntityTypeManager) copyInt(ctx context.Context, sourcePEI
 func (this *FSProtectedEntityTypeManager) getDataTransports(id astrolabe.ProtectedEntityID) ([]astrolabe.DataTransport,
 	[]astrolabe.DataTransport,
 	[]astrolabe.DataTransport, error) {
-	dataS3URL := this.s3URLBase + "fs/" + id.String()
 	data := []astrolabe.DataTransport{
-		astrolabe.NewDataTransportForS3URL(dataS3URL),
+		astrolabe.NewS3DataTransportForPEID(id, this.s3Config),
 	}
-
-	mdS3URL := dataS3URL + ".md"
 
 	md := []astrolabe.DataTransport{
-		astrolabe.NewDataTransportForS3URL(mdS3URL),
+		astrolabe.NewS3MDTransportForPEID(id, this.s3Config),
 	}
 
-	combinedS3URL := dataS3URL + ".zip"
 	combined := []astrolabe.DataTransport{
-		astrolabe.NewDataTransportForS3URL(combinedS3URL),
+		astrolabe.NewS3CombinedTransportForPEID(id, this.s3Config),
 	}
 
 	return data, md, combined, nil

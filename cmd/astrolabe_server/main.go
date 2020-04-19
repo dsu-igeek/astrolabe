@@ -45,7 +45,7 @@ func main() {
 		fmt.Errorf("apiPort %s is not an integer", *apiPortStr)
 		os.Exit(1)
 	}
-	_, pem := server.NewProtectedEntityManager(*confDirStr, apiPort)
+	pem := server.NewProtectedEntityManager(*confDirStr)
 	tm := server.NewTaskManager()
 	apiHandler := server.NewOpenAPIAstrolabeHandler(pem, tm)
 	// load embedded swagger file

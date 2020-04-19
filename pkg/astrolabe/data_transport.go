@@ -18,7 +18,15 @@ package astrolabe
 
 import (
 	"encoding/json"
+	"errors"
+	"github.com/aws/aws-sdk-go/aws"
+	credentials2 "github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/vmware-tanzu/astrolabe/gen/models"
+	"net"
+	"strconv"
+	"time"
 )
 
 // DataTransport is our internal interface representing the data transport for Protected Entity
@@ -52,7 +60,36 @@ const(
 	S3KeyParam = "key"
 )
 
-func NewDataTransportForS3URL(url string) DataTransport {
+type S3Config struct {
+	Port int			`json:"port,omitempty"`
+	Host net.IP			`json:"host,omitempty"`
+	AccessKey string	`json:"accessKey,omitempty"`
+	Secret string		`json:"secret,omitempty"`
+	Prefix string		`json:"prefix,omitempty"`
+	URLBase string		`json:"urlBase,omitempty"`
+}
+
+func getLocalIP() (net.IP, error) {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP, nil
+			}
+		}
+	}
+	return nil, errors.New("Could not determine local IP address")
+}
+
+func (this S3Config) getURL() (string) {
+	return "http://" + this.Host.String() + ":" + strconv.Itoa(this.Port) + "/"+this.Prefix+"/"
+}
+
+func newDataTransportForS3URL(url string) DataTransport {
 	return DataTransport{
 		transportType: S3TransportType,
 		params: map[string]string{
@@ -61,7 +98,7 @@ func NewDataTransportForS3URL(url string) DataTransport {
 	}
 }
 
-func NewDataTransportForS3(host string, bucket string, key string) DataTransport {
+func newDataTransportForS3(host string, bucket string, key string) DataTransport {
 	url := "http://" + host + "/" + bucket + "/" + key
 	return DataTransport{
 		transportType: S3TransportType,
@@ -72,6 +109,55 @@ func NewDataTransportForS3(host string, bucket string, key string) DataTransport
 			S3KeyParam:    key,
 		},
 	}
+}
+
+const (
+	DataExt = ""
+	MDExt = ".md"
+	CombinedExt = ".zip"
+	PEInfoExt = ".peinfo"
+)
+
+func NewS3DataTransportForPEID(peid ProtectedEntityID, s3Config S3Config) DataTransport {
+	return NewS3TransportForPEID(peid, DataExt, s3Config)
+}
+
+func NewS3MDTransportForPEID(peid ProtectedEntityID, s3Config S3Config) DataTransport {
+	return NewS3TransportForPEID(peid, MDExt, s3Config)
+}
+
+func NewS3CombinedTransportForPEID(peid ProtectedEntityID, s3Config S3Config) DataTransport {
+	return NewS3TransportForPEID(peid, CombinedExt, s3Config)
+}
+
+func NewS3PEInfoTransportForPEID(peid ProtectedEntityID, s3Config S3Config) DataTransport {
+	return NewS3TransportForPEID(peid, PEInfoExt, s3Config)
+}
+
+
+func NewS3TransportForPEID(peid ProtectedEntityID, ext string, s3Config S3Config) DataTransport {
+	credentials := credentials2.NewStaticCredentials(s3Config.AccessKey, s3Config.Secret, "")
+	s3ForcePathStyle := true
+	sess, err := session.NewSession(&aws.Config{
+		Endpoint: aws.String(s3Config.getURL()),
+		Credentials: credentials,
+		Region: aws.String("us-west-2"),
+		S3ForcePathStyle: &s3ForcePathStyle,
+	},
+	)
+
+	if err != nil {
+
+	}
+	// Create S3 service client
+	svc := s3.New(sess)
+	req, _ := svc.GetObjectRequest(&s3.GetObjectInput{
+		Bucket: aws.String(peid.peType),
+		Key:    aws.String(peid.String() + ext),
+	})
+
+	urlStr, err := req.Presign(15 * time.Minute)
+	return newDataTransportForS3URL(urlStr)
 }
 func (this DataTransport) GetTransportType() string {
 	return this.transportType

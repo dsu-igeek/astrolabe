@@ -39,13 +39,13 @@ type IVDProtectedEntityTypeManager struct {
 	client    *govmomi.Client
 	vsom      *vslm.GlobalObjectManager
 	cnsClient *cns.Client
-	s3URLBase string
+	s3Config  astrolabe.S3Config
 	user      string // These are being kept so we can open VDDK connections, may be able to open a VDDK connection
 	password  string // in IVDProtectedEntityTypeManager instead
 	logger    logrus.FieldLogger
 }
 
-func NewIVDProtectedEntityTypeManagerFromConfig(params map[string]interface{}, s3URLBase string,
+func NewIVDProtectedEntityTypeManagerFromConfig(params map[string]interface{}, s3Config astrolabe.S3Config,
 	logger logrus.FieldLogger) (*IVDProtectedEntityTypeManager, error) {
 	var vcURL url.URL
 	vcHostStr, ok := params["vcHost"].(string)
@@ -69,7 +69,7 @@ func NewIVDProtectedEntityTypeManagerFromConfig(params map[string]interface{}, s
 	}
 	vcURL.User = url.UserPassword(vcUser, vcPassword)
 	vcURL.Path = "/sdk"
-	return NewIVDProtectedEntityTypeManagerFromURL(&vcURL, s3URLBase, insecure, logger)
+	return NewIVDProtectedEntityTypeManagerFromURL(&vcURL, s3Config, insecure, logger)
 }
 
 func newKeepAliveClient(ctx context.Context, u *url.URL, insecure bool) (*govmomi.Client, error) {
@@ -97,7 +97,7 @@ func newKeepAliveClient(ctx context.Context, u *url.URL, insecure bool) (*govmom
 	return c, nil
 }
 
-func NewIVDProtectedEntityTypeManagerFromURL(url *url.URL, s3URLBase string, insecure bool, logger logrus.FieldLogger) (*IVDProtectedEntityTypeManager, error) {
+func NewIVDProtectedEntityTypeManagerFromURL(url *url.URL, s3Config astrolabe.S3Config, insecure bool, logger logrus.FieldLogger) (*IVDProtectedEntityTypeManager, error) {
 	ctx := context.Background()
 	client, err := newKeepAliveClient(ctx, url, insecure)
 
@@ -119,7 +119,7 @@ func NewIVDProtectedEntityTypeManagerFromURL(url *url.URL, s3URLBase string, ins
 		return nil, err
 	}
 
-	retVal, err := newIVDProtectedEntityTypeManagerWithClient(client, s3URLBase, vslmClient, cnsClient, logger)
+	retVal, err := newIVDProtectedEntityTypeManagerWithClient(client, s3Config, vslmClient, cnsClient, logger)
 	if err == nil {
 
 		retVal.user = url.User.Username()
@@ -136,7 +136,7 @@ const vsphereMajor = 6
 const vSphereMinor = 7
 const disklibLib64 = "/usr/lib/vmware-vix-disklib/lib64"
 
-func newIVDProtectedEntityTypeManagerWithClient(client *govmomi.Client, s3URLBase string, vslmClient *vslm.Client,
+func newIVDProtectedEntityTypeManagerWithClient(client *govmomi.Client, s3Config astrolabe.S3Config, vslmClient *vslm.Client,
 	cnsClient *cns.Client, logger logrus.FieldLogger) (*IVDProtectedEntityTypeManager, error) {
 
 	vsom := vslm.NewGlobalObjectManager(vslmClient)
@@ -149,7 +149,7 @@ func newIVDProtectedEntityTypeManagerWithClient(client *govmomi.Client, s3URLBas
 		client:    client,
 		vsom:      vsom,
 		cnsClient: cnsClient,
-		s3URLBase: s3URLBase,
+		s3Config:  s3Config,
 		logger:    logger,
 	}
 	return &retVal, nil
@@ -357,21 +357,18 @@ func (this *IVDProtectedEntityTypeManager) getDataTransports(id astrolabe.Protec
 	}
 	vadpParams["vcenter"] = this.client.URL().Host
 
-	dataS3URL := this.s3URLBase + "ivd/" + id.String()
 	data := []astrolabe.DataTransport{
 		astrolabe.NewDataTransport("vadp", vadpParams),
-		astrolabe.NewDataTransportForS3URL(dataS3URL),
+		astrolabe.NewS3DataTransportForPEID(id, this.s3Config),
 	}
 
-	mdS3URL := dataS3URL + ".md"
 
 	md := []astrolabe.DataTransport{
-		astrolabe.NewDataTransportForS3URL(mdS3URL),
+		astrolabe.NewS3MDTransportForPEID(id, this.s3Config),
 	}
 
-	combinedS3URL := dataS3URL + ".zip"
 	combined := []astrolabe.DataTransport{
-		astrolabe.NewDataTransportForS3URL(combinedS3URL),
+		astrolabe.NewS3CombinedTransportForPEID(id, this.s3Config),
 	}
 
 	return data, md, combined, nil
