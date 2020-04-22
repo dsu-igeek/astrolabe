@@ -98,7 +98,7 @@ func newDataTransportForS3URL(url string) DataTransport {
 	}
 }
 
-func newDataTransportForS3(host string, bucket string, key string) DataTransport {
+func NewDataTransportForS3(host string, bucket string, key string) DataTransport {
 	url := "http://" + host + "/" + bucket + "/" + key
 	return DataTransport{
 		transportType: S3TransportType,

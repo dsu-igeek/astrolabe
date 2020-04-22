@@ -5,10 +5,9 @@ go 1.13
 require (
 	github.com/Azure/azure-sdk-for-go v35.0.0+incompatible // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.2.0 // indirect
-	github.com/aws/aws-sdk-go v1.29.19
+	github.com/aws/aws-sdk-go v1.29.33
 	github.com/docker/spdystream v0.0.0-20181023171402-6480d4af844c // indirect
 	github.com/elazarl/goproxy v0.0.0-20180725130230-947c36da3153 // indirect
-	github.com/evanphx/json-patch v4.5.0+incompatible // indirect
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/go-openapi/errors v0.19.4
 	github.com/go-openapi/loads v0.19.5
@@ -26,7 +25,6 @@ require (
 	github.com/google/uuid v1.1.1
 	github.com/googleapis/gnostic v0.3.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
-	github.com/imdario/mergo v0.3.8 // indirect
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/kr/pretty v0.2.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -35,12 +33,13 @@ require (
 	github.com/onsi/ginkgo v1.11.0 // indirect
 	github.com/onsi/gomega v1.7.0 // indirect
 	github.com/pkg/errors v0.9.1
-	github.com/sirupsen/logrus v1.4.2
+	github.com/sirupsen/logrus v1.5.0
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/urfave/cli/v2 v2.2.0
 	github.com/vmware-tanzu/velero v1.3.1
 	github.com/vmware/govmomi v0.22.2-0.20200329013745-f2eef8fc745f
 	github.com/vmware/gvddk v0.8.1
+	github.com/zalando/postgres-operator v1.4.0
 	go.mongodb.org/mongo-driver v1.3.1 // indirect
 	golang.org/x/crypto v0.0.0-20200311171314-f7b00557c8c4 // indirect
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
@@ -48,12 +47,10 @@ require (
 	golang.org/x/sys v0.0.0-20200302150141-5c8b2ff67527 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	google.golang.org/appengine v1.6.5 // indirect
-	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gotest.tools v2.2.0+incompatible
-	k8s.io/api v0.17.3
-	k8s.io/apiextensions-apiserver v0.17.3 // indirect
-	k8s.io/apimachinery v0.17.3
+	k8s.io/api v0.18.0
+	k8s.io/apimachinery v0.18.0
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/klog v1.0.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20200121204235-bf4fb3bd569c // indirect

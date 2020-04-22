@@ -45,6 +45,9 @@ s3repository:
 kubernetes: 
 	cd pkg/kubernetes; go build
 
+psql: 
+	cd pkg/psql; go build
+
 server: 
 	cd pkg/server; go build
 
