@@ -2,6 +2,7 @@ package psql
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -21,13 +22,12 @@ func TestProtectedEntityTypeManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not get protected entity err %v", err)
 	}
-	/*
-		snapshotID, err := pe.Snapshot(context.TODO())
-		if err != nil {
-			t.Fatalf("Could not create snapshot, err %v", err)
-		}
-		fmt.Printf("Created snapshot id %s\n", snapshotID.String())
-	*/
+
+	snapshotID, err := pe.Snapshot(context.TODO())
+	if err != nil {
+		t.Fatalf("Could not create snapshot, err %v", err)
+	}
+	fmt.Printf("Created snapshot id %s\n", snapshotID.String())
 
 	snapIDs, err := pe.ListSnapshots(ctx)
 	if err != nil {
