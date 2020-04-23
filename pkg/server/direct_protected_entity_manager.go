@@ -25,6 +25,7 @@ import (
 	"github.com/vmware-tanzu/astrolabe/pkg/fs"
 	"github.com/vmware-tanzu/astrolabe/pkg/ivd"
 	"github.com/vmware-tanzu/astrolabe/pkg/kubernetes"
+	"github.com/vmware-tanzu/astrolabe/pkg/psql"
 	"io/ioutil"
 	"log"
 	"os"
@@ -70,6 +71,8 @@ func NewDirectProtectedEntityManagerFromParamMap(configInfo ConfigInfo) *DirectP
 				logger)
 		case "fs":
 			curService, err = fs.NewFSProtectedEntityTypeManagerFromConfig(params, configInfo.s3Config, logger)
+		case "psql":
+			curService, err = psql.NewPSQLProtectedEntityTypeManager(params, configInfo.s3Config, logger)
 		default:
 
 		}
