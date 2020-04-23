@@ -4,22 +4,34 @@ import (
 	"context"
 	"fmt"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/astrolabe/pkg/astrolabe"
 	v1 "github.com/zalando/postgres-operator/pkg/apis/acid.zalan.do/v1"
 	"github.com/zalando/postgres-operator/pkg/util/k8sutil"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
 )
 
 type PSQLProtectedEntityTypeManager struct {
 	KubeClient       k8sutil.KubernetesClient
-	watchedNamespace string
 	snapshotsDir     string
+	s3Config         astrolabe.S3Config
+	logger           logrus.FieldLogger
 }
 
-func NewPSQLProtectedEntityTypeManager() (PSQLProtectedEntityTypeManager, error) {
-	restConfig, err := clientcmd.BuildConfigFromFlags("", "/home/dsmithuchida/.kube/config")
+const (
+	KubeConfigKey = "kubeconfig"
+	SnapshotsDirKey = "snapshotsDir"
+)
+func NewPSQLProtectedEntityTypeManager(params map[string]interface{}, s3Config astrolabe.S3Config,
+	logger logrus.FieldLogger) (PSQLProtectedEntityTypeManager, error) {
+	var restConfig *restclient.Config
+	var err error
+	if kubeConfig, hasKubeConfig := params[KubeConfigKey].(string); hasKubeConfig {
+		restConfig, err = clientcmd.BuildConfigFromFlags("", kubeConfig)
+	}
 	if err != nil {
 		return PSQLProtectedEntityTypeManager{}, err
 	}
@@ -29,7 +41,10 @@ func NewPSQLProtectedEntityTypeManager() (PSQLProtectedEntityTypeManager, error)
 		return PSQLProtectedEntityTypeManager{}, err
 	}
 
-	snapshotsDir := "/tmp/psql"
+	snapshotsDir, hasSnapshotsDir := params[SnapshotsDirKey].(string)
+	if !hasSnapshotsDir {
+		return PSQLProtectedEntityTypeManager{}, errors.New("no "+SnapshotsDirKey+" param found")
+	}
 
 	snapshotsDirInfo, err := os.Stat(snapshotsDir)
 	if err != nil {
@@ -50,8 +65,9 @@ func NewPSQLProtectedEntityTypeManager() (PSQLProtectedEntityTypeManager, error)
 
 	returnPETM := PSQLProtectedEntityTypeManager{
 		KubeClient:       kubeClient,
-		watchedNamespace: "postgres-test",
 		snapshotsDir:     snapshotsDir,
+		logger:           logger,
+		s3Config:         s3Config,
 	}
 
 	return returnPETM, nil
@@ -71,12 +87,11 @@ func (this PSQLProtectedEntityTypeManager) GetProtectedEntity(ctx context.Contex
 }
 
 func (this PSQLProtectedEntityTypeManager) getPostgresqlForPEID(crx context.Context, id astrolabe.ProtectedEntityID) (v1.Postgresql, error) {
-	var options metav1.ListOptions
-	list, err := this.KubeClient.AcidV1ClientSet.AcidV1().Postgresqls(this.watchedNamespace).List(options)
+	list, err := this.listAllPSQLs()
 	if err != nil {
-		return v1.Postgresql{}, errors.Wrap(err, "could not retrieve postgres instances")
+		return v1.Postgresql{}, errors.Wrap(err, "could not retrieve psqls")
 	}
-	for _, curPSQL := range list.Items {
+	for _, curPSQL := range list {
 		if string(curPSQL.UID) == id.GetID() {
 			return curPSQL, nil
 		}
@@ -84,15 +99,31 @@ func (this PSQLProtectedEntityTypeManager) getPostgresqlForPEID(crx context.Cont
 	return v1.Postgresql{}, errors.New("Not found")
 }
 
-func (this PSQLProtectedEntityTypeManager) GetProtectedEntities(ctx context.Context) ([]astrolabe.ProtectedEntityID, error) {
+func (this PSQLProtectedEntityTypeManager) listAllPSQLs() ([]v1.Postgresql, error) {
 	var options metav1.ListOptions
-	list, err := this.KubeClient.AcidV1ClientSet.AcidV1().Postgresqls(this.watchedNamespace).List(options)
+	namespaces, err := this.KubeClient.Namespaces().List(options)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not retrieve namespaces")
+	}
+	var list []v1.Postgresql
+	for _, curNamespace := range namespaces.Items {
+		curList, err := this.KubeClient.AcidV1ClientSet.AcidV1().Postgresqls(curNamespace.Name).List(options)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not retrieve postgres instances")
+		}
+		list = append(list, curList.Items...)
+	}
+	return list, nil
+}
+
+func (this PSQLProtectedEntityTypeManager) GetProtectedEntities(ctx context.Context) ([]astrolabe.ProtectedEntityID, error) {
+	list, err := this.listAllPSQLs()
 	if err != nil {
 		return nil, errors.Wrap(err, "could not retrieve postgres instances")
 	}
 
 	var returnIDs []astrolabe.ProtectedEntityID
-	for _, curPSQL := range list.Items {
+	for _, curPSQL := range list {
 		fmt.Printf("%v\n", curPSQL)
 		id := astrolabe.NewProtectedEntityID(this.GetTypeName(), string(curPSQL.UID))
 		returnIDs = append(returnIDs, id)
