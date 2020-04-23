@@ -21,7 +21,6 @@ import (
 	"github.com/labstack/echo"
 	"github.com/vmware-tanzu/astrolabe/pkg/astrolabe"
 	"net/http"
-	"strings"
 )
 
 type Astrolabe struct {
@@ -30,49 +29,12 @@ type Astrolabe struct {
 	s3_services  map[string]*ServiceS3
 }
 
-func NewAstrolabe(confDirPath string) *Astrolabe {
-
-	pem := NewProtectedEntityManager(confDirPath)
-	api_services := make(map[string]*ServiceAPI)
-	s3_services := make(map[string]*ServiceS3)
-	for _, curService := range pem.ListEntityTypeManagers() {
-		serviceName := curService.GetTypeName()
-		api_services[serviceName] = NewServiceAPI(curService)
-		s3_services[serviceName] = NewServiceS3(curService)
-	}
-
-	retAstrolabe := Astrolabe{
-		api_services: api_services,
-		s3_services:  s3_services,
-	}
-
-	return &retAstrolabe
-}
-
 func NewProtectedEntityManager(confDirPath string) (astrolabe.ProtectedEntityManager) {
 	dpem := NewDirectProtectedEntityManagerFromConfigDir(confDirPath)
 	var pem astrolabe.ProtectedEntityManager
 	pem = dpem
 	return pem
 }
-
-func NewAstrolabeRepository() *Astrolabe {
-	return nil
-}
-
-func (this *Astrolabe) Get(c echo.Context) error {
-	var servicesList strings.Builder
-	needsComma := false
-	for serviceName := range this.api_services {
-		if needsComma {
-			servicesList.WriteString(",")
-		}
-		servicesList.WriteString(serviceName)
-		needsComma = true
-	}
-	return c.String(http.StatusOK, servicesList.String())
-}
-
 
 const fileSuffix = ".pe.json"
 

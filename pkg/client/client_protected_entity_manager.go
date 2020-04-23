@@ -46,10 +46,9 @@ func (this ClientProtectedEntityManager) GetProtectedEntityTypeManager(peType st
 func (this ClientProtectedEntityManager) ListEntityTypeManagers() []astrolabe.ProtectedEntityTypeManager {
 	this.typeManagerMutex.Lock()
 	defer this.typeManagerMutex.Unlock()
-	returnPETMs := make([]astrolabe.ProtectedEntityTypeManager, len(this.typeManagers))
-	var index int
+	returnPETMs := []astrolabe.ProtectedEntityTypeManager{}
 	for _, curPETM := range this.typeManagers {
-		returnPETMs[index] = curPETM
+		returnPETMs = append(returnPETMs, curPETM)
 	}
 	return returnPETMs
 }

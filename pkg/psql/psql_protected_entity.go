@@ -31,7 +31,33 @@ func NewPSQLProtectedEntity(id astrolabe.ProtectedEntityID, petm *PSQLProtectedE
 }
 
 func (this PSQLProtectedEntity) GetInfo(ctx context.Context) (astrolabe.ProtectedEntityInfo, error) {
-	panic("implement me")
+	psql, err := this.petm.getPostgresqlForPEID(ctx, this.id)
+
+	if err != nil {
+		return nil, errors.Wrapf(err, "getPostgresqlForPEID failed for %s", this.id.String())
+	}
+
+	data := []astrolabe.DataTransport{
+		astrolabe.NewS3DataTransportForPEID(this.id, this.petm.s3Config),
+	}
+
+
+	md := []astrolabe.DataTransport{
+		astrolabe.NewS3MDTransportForPEID(this.id, this.petm.s3Config),
+	}
+
+	combined := []astrolabe.DataTransport{
+		astrolabe.NewS3CombinedTransportForPEID(this.id, this.petm.s3Config),
+	}
+	retVal := astrolabe.NewProtectedEntityInfo(
+		this.id,
+		psql.Name,
+		-1,
+		data,
+		md,
+		combined,
+		[]astrolabe.ProtectedEntityID{})
+	return retVal, nil
 }
 
 func (this PSQLProtectedEntity) GetCombinedInfo(ctx context.Context) ([]astrolabe.ProtectedEntityInfo, error) {
@@ -190,7 +216,7 @@ func (this PSQLProtectedEntity) GetInfoForSnapshot(ctx context.Context, snapshot
 }
 
 func (this PSQLProtectedEntity) GetComponents(ctx context.Context) ([]astrolabe.ProtectedEntity, error) {
-	panic("implement me")
+	return []astrolabe.ProtectedEntity{}, nil
 }
 
 func (this PSQLProtectedEntity) GetID() astrolabe.ProtectedEntityID {
