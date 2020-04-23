@@ -13,9 +13,9 @@ import (
 )
 
 type PSQLProtectedEntityTypeManager struct {
-	KubeClient k8sutil.KubernetesClient
+	KubeClient       k8sutil.KubernetesClient
 	watchedNamespace string
-	snapshotsDir string
+	snapshotsDir     string
 }
 
 func NewPSQLProtectedEntityTypeManager() (PSQLProtectedEntityTypeManager, error) {
@@ -51,7 +51,7 @@ func NewPSQLProtectedEntityTypeManager() (PSQLProtectedEntityTypeManager, error)
 	returnPETM := PSQLProtectedEntityTypeManager{
 		KubeClient:       kubeClient,
 		watchedNamespace: "postgres-test",
-		snapshotsDir: snapshotsDir,
+		snapshotsDir:     snapshotsDir,
 	}
 
 	return returnPETM, nil
