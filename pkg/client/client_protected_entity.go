@@ -132,7 +132,7 @@ func getBestReaderForTransports(ctx context.Context, transports [] astrolabe.Dat
 			return getReaderForS3Transport(ctx, checkTransport)
 		}
 	}
-	return nil, errors.New("Could not find usable data transport")
+	return nil, nil
 }
 
 func getReaderForS3Transport(ctx context.Context, s3Transport astrolabe.DataTransport) (io.ReadCloser, error) {
