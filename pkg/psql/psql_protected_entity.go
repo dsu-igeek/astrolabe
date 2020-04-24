@@ -11,10 +11,7 @@ import (
 	"io"
 	"io/ioutil"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 )
 
 type PSQLProtectedEntity struct {
@@ -89,137 +86,20 @@ func (this PSQLProtectedEntity) Snapshot(ctx context.Context) (astrolabe.Protect
 	}
 	snapshotID := astrolabe.NewProtectedEntitySnapshotID(snapshotUUID.String())
 
-	/*
-		pod, err := this.petm.KubeClient.Pods(this.namespace).Create(&v1.Pod{
-			TypeMeta:   meta_v1.TypeMeta{},
-			ObjectMeta: meta_v1.ObjectMeta{
-				Name: "snapshot-pg-"+snapshotID.String(),
-			},
-			Spec:       v1.PodSpec{},
-			Status:     v1.PodStatus{},
-		})
-		pod.
-		panic("implement me")
-	*/
-	peSnapshotDir := filepath.Join(this.petm.snapshotsDir, this.id.String())
-	peSnapshotDirInfo, err := os.Stat(peSnapshotDir)
+
+	err = this.petm.internalRepo.WriteProtectedEntity(ctx, this, snapshotID)
 	if err != nil {
-		if os.IsNotExist(err) {
-			err = os.Mkdir(peSnapshotDir, 0700)
-			if err != nil {
-				return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrapf(err, "could not create snapshot directory %s", peSnapshotDir)
-			}
-			peSnapshotDirInfo, err = os.Stat(peSnapshotDir)
-		}
-		if err != nil {
-			return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrapf(err, "stat on snapshotsdir %s failed", peSnapshotDir)
-		}
+		return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrap(err, "Failed to create new snapshot")
 	}
-	if !peSnapshotDirInfo.IsDir() {
-		return astrolabe.ProtectedEntitySnapshotID{}, errors.New(fmt.Sprintf("snapshot directory %s for pe %s is not a directory", peSnapshotDir, this.id.String()))
-	}
-	snapshotPEID := this.id.IDWithSnapshot(snapshotID)
-
-	snapshotMDFilename := mdFilenameForSnapshot(snapshotPEID)
-	snapshotMDPath := filepath.Join(peSnapshotDir, snapshotMDFilename)
-	snapshotMDFile, err := os.Create(snapshotMDPath)
-	if err != nil {
-		return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrapf(err, "Failed to create md file %s", snapshotMDPath)
-	}
-
-	mdReader, err := this.GetMetadataReader(ctx)
-	_, err = io.Copy(snapshotMDFile, mdReader)
-
-	snapshotDataFilename := dataFilenameForSnapshot(snapshotPEID)
-	snapshotDataPath := filepath.Join(peSnapshotDir, snapshotDataFilename)
-
-	snapshotDataFile, err := os.Create(snapshotDataPath)
-	if err != nil {
-		return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrapf(err, "Failed to create data file %s", snapshotDataPath)
-	}
-
-	dataReader, err := this.GetDataReader(ctx)
-	if err != nil {
-		return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrap(err, "Failed to get cmd's stdout")
-	}
-
-	_, err = io.Copy(snapshotDataFile, dataReader)
-
-	if err != nil {
-		return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrap(err, "Command failed")
-	}
-
 	return snapshotID, nil
-}
-
-type copyResults struct {
-	written int64
-	err     error
-}
-
-func copyAndNotify(dst io.WriteCloser, src io.ReadCloser, finished chan copyResults) {
-	written, err := io.Copy(dst, src)
-	dst.Close()
-	src.Close()
-
-	finished <- copyResults{
-		written: written,
-		err:     err,
-	}
-}
-
-const snapshotDataExtension = ".psql-snap-data"
-
-func dataFilenameForSnapshot(snapshotPEID astrolabe.ProtectedEntityID) string {
-	return snapshotPEID.String() + snapshotDataExtension
-}
-
-const snapshotMDExtension = ".psql-snap-md"
-
-func mdFilenameForSnapshot(snapshotPEID astrolabe.ProtectedEntityID) string {
-	return snapshotPEID.String() + snapshotMDExtension
-}
-
-func snapshotPEIDForFilename(filename string) (astrolabe.ProtectedEntityID, error) {
-	if !strings.HasSuffix(filename, snapshotDataExtension) {
-		return astrolabe.ProtectedEntityID{}, errors.New(fmt.Sprintf("%s does not end with %s", filename, snapshotDataExtension))
-	}
-	peidStr := strings.TrimSuffix(filename, snapshotDataExtension)
-	return astrolabe.NewProtectedEntityIDFromString(peidStr)
 }
 
 func (this PSQLProtectedEntity) ListSnapshots(ctx context.Context) ([]astrolabe.ProtectedEntitySnapshotID, error) {
 	if this.id.HasSnapshot() {
 		return nil, errors.New(fmt.Sprintf("pe %s is a snapshot, cannot list snapshots", this.id.String()))
 	}
-	peSnapshotDir := filepath.Join(this.petm.snapshotsDir, this.id.String())
-	peSnapshotDirInfo, err := os.Stat(peSnapshotDir)
-	var returnIDs = make([]astrolabe.ProtectedEntitySnapshotID, 0)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []astrolabe.ProtectedEntitySnapshotID{}, nil
-		}
-		return returnIDs, errors.Wrapf(err, "could not snap snapshot dir %s", peSnapshotDir)
-	}
-	if !peSnapshotDirInfo.IsDir() {
-		return []astrolabe.ProtectedEntitySnapshotID{}, errors.New(fmt.Sprintf("snapshot directory %s for pe %s is not a directory", peSnapshotDir, this.id.String()))
-	}
-	fileInfo, err := ioutil.ReadDir(peSnapshotDir)
-	if err != nil {
-		return returnIDs, errors.Wrapf(err, "could not read snapshot dir %s", peSnapshotDir)
-	}
 
-	for _, curFileInfo := range fileInfo {
-		if strings.HasSuffix(curFileInfo.Name(), snapshotDataExtension) {
-			peid, err := snapshotPEIDForFilename(curFileInfo.Name())
-			if err != nil {
-
-			} else {
-				returnIDs = append(returnIDs, peid.GetSnapshotID())
-			}
-		}
-	}
-	return returnIDs, nil
+	return this.petm.internalRepo.ListSnapshotsForPEID(this.id)
 }
 
 func (this PSQLProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID) (bool, error) {
@@ -273,18 +153,7 @@ func (this PSQLProtectedEntity) GetDataReader(ctx context.Context) (io.ReadClose
 
 		return cmdStdout, nil
 	}
-	peSnapshotDir := filepath.Join(this.petm.snapshotsDir, this.id.GetBaseID().String())
-	peSnapshotDirInfo, err := os.Stat(peSnapshotDir)
-	if err != nil {
-		return nil, errors.Wrapf(err, "stat on snapshotsdir %s failed", peSnapshotDir)
-	}
-	if !peSnapshotDirInfo.IsDir() {
-		return nil, errors.New(fmt.Sprintf("snapshot directory %s for pe %s is not a directory", peSnapshotDir, this.id.String()))
-	}
-	snapshotFilename := dataFilenameForSnapshot(this.id)
-	snapshotPath := filepath.Join(peSnapshotDir, snapshotFilename)
-	reader, err := os.Open(snapshotPath)
-	return reader, err
+	return this.petm.internalRepo.GetDataReaderForSnapshot(this.id)
 }
 
 func (this PSQLProtectedEntity) GetMetadataReader(ctx context.Context) (io.ReadCloser, error) {
@@ -296,16 +165,5 @@ func (this PSQLProtectedEntity) GetMetadataReader(ctx context.Context) (io.ReadC
 		psqlBytes, err := json.Marshal(psql)
 		return ioutil.NopCloser(bytes.NewReader(psqlBytes)), nil
 	}
-	peSnapshotDir := filepath.Join(this.petm.snapshotsDir, this.id.GetBaseID().String())
-	peSnapshotDirInfo, err := os.Stat(peSnapshotDir)
-	if err != nil {
-		return nil, errors.Wrapf(err, "stat on snapshotsdir %s failed", peSnapshotDir)
-	}
-	if !peSnapshotDirInfo.IsDir() {
-		return nil, errors.New(fmt.Sprintf("snapshot directory %s for pe %s is not a directory", peSnapshotDir, this.id.String()))
-	}
-	snapshotFilename := mdFilenameForSnapshot(this.id)
-	snapshotPath := filepath.Join(peSnapshotDir, snapshotFilename)
-	reader, err := os.Open(snapshotPath)
-	return reader, err
+	return this.petm.internalRepo.GetMetadataReaderForSnapshot(this.id)
 }

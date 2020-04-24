@@ -80,7 +80,6 @@ func (this OpenAPIAstrolabeHandler) GetProtectedEntityInfo(params operations.Get
 
 	petm := this.pem.GetProtectedEntityTypeManager(params.Service)
 	if petm == nil {
-
 	}
 	peid, err := astrolabe.NewProtectedEntityIDFromString(params.ProtectedEntityID)
 	if err != nil {
