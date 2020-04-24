@@ -6,25 +6,27 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/astrolabe/pkg/astrolabe"
+	"github.com/vmware-tanzu/astrolabe/pkg/localsnap"
 	v1 "github.com/zalando/postgres-operator/pkg/apis/acid.zalan.do/v1"
 	"github.com/zalando/postgres-operator/pkg/util/k8sutil"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
 )
 
 type PSQLProtectedEntityTypeManager struct {
-	KubeClient       k8sutil.KubernetesClient
-	snapshotsDir     string
-	s3Config         astrolabe.S3Config
-	logger           logrus.FieldLogger
+	KubeClient   k8sutil.KubernetesClient
+	snapshotsDir string
+	s3Config     astrolabe.S3Config
+	logger       logrus.FieldLogger
+	internalRepo localsnap.LocalSnapshotRepo
 }
 
 const (
-	KubeConfigKey = "kubeconfig"
+	KubeConfigKey   = "kubeconfig"
 	SnapshotsDirKey = "snapshotsDir"
 )
+
 func NewPSQLProtectedEntityTypeManager(params map[string]interface{}, s3Config astrolabe.S3Config,
 	logger logrus.FieldLogger) (PSQLProtectedEntityTypeManager, error) {
 	var restConfig *restclient.Config
@@ -33,48 +35,37 @@ func NewPSQLProtectedEntityTypeManager(params map[string]interface{}, s3Config a
 		restConfig, err = clientcmd.BuildConfigFromFlags("", kubeConfig)
 	}
 	if err != nil {
-		return PSQLProtectedEntityTypeManager{}, err
+		return PSQLProtectedEntityTypeManager{}, errors.Wrap(err, "could not create restConfig")
 	}
 	kubeClient, err := k8sutil.NewFromConfig(restConfig)
 
 	if err != nil {
-		return PSQLProtectedEntityTypeManager{}, err
+		return PSQLProtectedEntityTypeManager{}, errors.Wrap(err, "could not create kubeClient")
 	}
 
 	snapshotsDir, hasSnapshotsDir := params[SnapshotsDirKey].(string)
 	if !hasSnapshotsDir {
-		return PSQLProtectedEntityTypeManager{}, errors.New("no "+SnapshotsDirKey+" param found")
+		return PSQLProtectedEntityTypeManager{}, errors.New("no " + SnapshotsDirKey + " param found")
 	}
 
-	snapshotsDirInfo, err := os.Stat(snapshotsDir)
+	localSnapshotRepo, err := localsnap.NewLocalSnapshotRepo(typename, snapshotsDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			err = os.Mkdir(snapshotsDir, 0700)
-			if err != nil {
-				return PSQLProtectedEntityTypeManager{}, errors.Wrapf(err, "could not create snapshot directory %s", snapshotsDir)
-			}
-			snapshotsDirInfo, err = os.Stat(snapshotsDir)
-		}
-		if err != nil {
-			return PSQLProtectedEntityTypeManager{}, errors.Wrapf(err, "stat on snapshotsdir %s failed", snapshotsDir)
-		}
+		return PSQLProtectedEntityTypeManager{}, err
 	}
-	if !snapshotsDirInfo.IsDir() {
-		return PSQLProtectedEntityTypeManager{}, errors.New(fmt.Sprintf("configured snapshots dir %s is not a directory", snapshotsDir))
-	}
-
 	returnPETM := PSQLProtectedEntityTypeManager{
-		KubeClient:       kubeClient,
-		snapshotsDir:     snapshotsDir,
-		logger:           logger,
-		s3Config:         s3Config,
+		KubeClient:   kubeClient,
+		snapshotsDir: snapshotsDir,
+		logger:       logger,
+		s3Config:     s3Config,
+		internalRepo: localSnapshotRepo,
 	}
 
 	return returnPETM, nil
 }
 
+const typename = "psql"
 func (this PSQLProtectedEntityTypeManager) GetTypeName() string {
-	return "psql"
+	return typename
 }
 
 func (this PSQLProtectedEntityTypeManager) GetProtectedEntity(ctx context.Context, id astrolabe.ProtectedEntityID) (astrolabe.ProtectedEntity, error) {
