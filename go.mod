@@ -3,8 +3,6 @@ module github.com/vmware-tanzu/astrolabe
 go 1.13
 
 require (
-	github.com/Azure/azure-sdk-for-go v35.0.0+incompatible // indirect
-	github.com/Azure/go-autorest/autorest/validation v0.2.0 // indirect
 	github.com/aws/aws-sdk-go v1.29.19
 	github.com/docker/spdystream v0.0.0-20181023171402-6480d4af844c // indirect
 	github.com/elazarl/goproxy v0.0.0-20180725130230-947c36da3153 // indirect
@@ -16,11 +14,9 @@ require (
 	github.com/go-openapi/strfmt v0.19.5
 	github.com/go-openapi/swag v0.19.8
 	github.com/go-openapi/validate v0.19.7
-	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/groupcache v0.0.0-20191027212112-611e8accdfc9 // indirect
 	github.com/golang/protobuf v1.3.5 // indirect
-	github.com/google/go-cmp v0.3.1 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/googleapis/gnostic v0.3.1 // indirect
@@ -34,9 +30,7 @@ require (
 	github.com/onsi/gomega v1.7.0 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.4.2
-	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/urfave/cli/v2 v2.2.0
-	github.com/vmware-tanzu/velero v1.3.1
 	github.com/vmware/govmomi v0.22.2-0.20200329013745-f2eef8fc745f
 	github.com/vmware/gvddk v0.8.1
 	github.com/zalando/postgres-operator v1.4.0
@@ -53,9 +47,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.17.3 // indirect
 	k8s.io/apimachinery v0.17.3
 	k8s.io/client-go v12.0.0+incompatible
-	k8s.io/klog v1.0.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20200121204235-bf4fb3bd569c // indirect
-	k8s.io/utils v0.0.0-20191010214722-8d271d903fe4 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
@@ -89,3 +81,5 @@ replace (
 replace github.com/docker/docker => github.com/moby/moby v0.7.3-0.20190826074503-38ab9da00309 // Required by Helm
 
 replace github.com/openshift/api => github.com/openshift/api v0.0.0-20190924102528-32369d4db2ad // Required until https://github.com/operator-framework/operator-lifecycle-manager/pull/1241 is resolved
+
+replace github.com/vmware-tanzu/velero => ../velero
