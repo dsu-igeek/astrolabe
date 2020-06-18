@@ -89,7 +89,7 @@ func (this S3Config) getURL() (string) {
 	return "http://" + this.Host.String() + ":" + strconv.Itoa(this.Port) + "/"+this.Prefix+"/"
 }
 
-func newDataTransportForS3URL(url string) DataTransport {
+func NewDataTransportForS3URL(url string) DataTransport {
 	return DataTransport{
 		transportType: S3TransportType,
 		params: map[string]string{
@@ -157,7 +157,7 @@ func NewS3TransportForPEID(peid ProtectedEntityID, ext string, s3Config S3Config
 	})
 
 	urlStr, err := req.Presign(15 * time.Minute)
-	return newDataTransportForS3URL(urlStr)
+	return NewDataTransportForS3URL(urlStr)
 }
 func (this DataTransport) GetTransportType() string {
 	return this.transportType

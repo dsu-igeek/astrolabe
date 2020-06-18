@@ -51,6 +51,9 @@ psql:
 server: 
 	cd pkg/server; go build
 
+client:
+	cd pkg/client; go build
+
 server-gen: gen/restapi/server.go
 
 gen/restapi/server.go: openapi/astrolabe_api.yaml
