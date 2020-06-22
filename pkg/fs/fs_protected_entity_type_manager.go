@@ -18,7 +18,7 @@ package fs
 
 import (
 	"context"
-	"errors"
+	"github.com/pkg/errors"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/astrolabe/pkg/astrolabe"
@@ -139,16 +139,32 @@ func (this *FSProtectedEntityTypeManager) copyInt(ctx context.Context, sourcePEI
 func (this *FSProtectedEntityTypeManager) getDataTransports(id astrolabe.ProtectedEntityID) ([]astrolabe.DataTransport,
 	[]astrolabe.DataTransport,
 	[]astrolabe.DataTransport, error) {
+
+	dataS3Transport, err := astrolabe.NewS3DataTransportForPEID(id, this.s3Config)
+	if err != nil {
+		return nil, nil, nil, errors.Wrap(err, "Could not create S3 data transport")
+	}
+
 	data := []astrolabe.DataTransport{
-		astrolabe.NewS3DataTransportForPEID(id, this.s3Config),
+		dataS3Transport,
+	}
+
+	mdS3Transport, err := astrolabe.NewS3MDTransportForPEID(id, this.s3Config)
+	if err != nil {
+		return nil, nil, nil, errors.Wrap(err, "Could not create S3 md transport")
 	}
 
 	md := []astrolabe.DataTransport{
-		astrolabe.NewS3MDTransportForPEID(id, this.s3Config),
+		mdS3Transport,
+	}
+
+	combinedS3Transport, err := astrolabe.NewS3CombinedTransportForPEID(id, this.s3Config)
+	if err != nil {
+		return nil, nil, nil, errors.Wrap(err, "Could not create S3 combined transport")
 	}
 
 	combined := []astrolabe.DataTransport{
-		astrolabe.NewS3CombinedTransportForPEID(id, this.s3Config),
+		combinedS3Transport,
 	}
 
 	return data, md, combined, nil

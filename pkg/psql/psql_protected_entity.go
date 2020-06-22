@@ -34,17 +34,31 @@ func (this PSQLProtectedEntity) GetInfo(ctx context.Context) (astrolabe.Protecte
 		return nil, errors.Wrapf(err, "getPostgresqlForPEID failed for %s", this.id.String())
 	}
 
-	data := []astrolabe.DataTransport{
-		astrolabe.NewS3DataTransportForPEID(this.id, this.petm.s3Config),
+	dataS3Transport, err := astrolabe.NewS3DataTransportForPEID(this.id, this.petm.s3Config)
+	if err != nil {
+		return nil, errors.Wrap(err, "Could not create S3 data transport")
 	}
 
+	data := []astrolabe.DataTransport{
+		dataS3Transport,
+	}
+
+	mdS3Transport, err := astrolabe.NewS3MDTransportForPEID(this.id, this.petm.s3Config)
+	if err != nil {
+		return nil, errors.Wrap(err, "Could not create S3 md transport")
+	}
 
 	md := []astrolabe.DataTransport{
-		astrolabe.NewS3MDTransportForPEID(this.id, this.petm.s3Config),
+		mdS3Transport,
+	}
+
+	combinedS3Transport, err := astrolabe.NewS3CombinedTransportForPEID(this.id, this.petm.s3Config)
+	if err != nil {
+		return nil, errors.Wrap(err, "Could not create S3 combined transport")
 	}
 
 	combined := []astrolabe.DataTransport{
-		astrolabe.NewS3CombinedTransportForPEID(this.id, this.petm.s3Config),
+		combinedS3Transport,
 	}
 	retVal := astrolabe.NewProtectedEntityInfo(
 		this.id,
