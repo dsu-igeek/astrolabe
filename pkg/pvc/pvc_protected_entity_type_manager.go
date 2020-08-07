@@ -144,7 +144,8 @@ func (this *PVCProtectedEntityTypeManager) getDataTransports(id astrolabe.Protec
 }
 
 // CreateFromMetadata creates a new PVC (dynamic provisioning path) with serialized PVC info
-func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Context, buf []byte) (astrolabe.ProtectedEntity, error) {
+func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Context, buf []byte,
+	sourceSnapshotID astrolabe.ProtectedEntityID, componentSourcePETM astrolabe.ProtectedEntityTypeManager) (astrolabe.ProtectedEntity, error) {
 	pvc := v1.PersistentVolumeClaim{}
 	err := pvc.Unmarshal(buf)
 	if err != nil {
@@ -166,34 +167,62 @@ func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Contex
 	pvc.Spec.VolumeName = ""
 	pvc.Status = v1.PersistentVolumeClaimStatus{}
 
-	// Creates a new PVC (dynamic provisioning path)
-	if _, err = this.clientSet.CoreV1().PersistentVolumeClaims(pvc.Namespace).Create(&pvc); err == nil || apierrs.IsAlreadyExists(err) {
-		// Save succeeded.
-		if err != nil {
-			this.logger.Infof("PVC %s/%s already exists, reusing", pvc.Namespace, pvc.Name)
-			err = nil
-		} else {
-			this.logger.Infof("PVC %s/%s saved", pvc.Namespace, pvc.Name)
+	var pvcPE astrolabe.ProtectedEntity
+	dynamic := true
+	if dynamic {
+
+		// Creates a new PVC (dynamic provisioning path)
+		if _, err = this.clientSet.CoreV1().PersistentVolumeClaims(pvc.Namespace).Create(&pvc); err == nil || apierrs.IsAlreadyExists(err) {
+			// Save succeeded.
+			if err != nil {
+				this.logger.Infof("PVC %s/%s already exists, reusing", pvc.Namespace, pvc.Name)
+				err = nil
+			} else {
+				this.logger.Infof("PVC %s/%s saved", pvc.Namespace, pvc.Name)
+			}
 		}
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to create PVC %s/%s in the API server: %v", pvc.Namespace, pvc.Name, err)
-	}
-	this.logger.Infof("CreateFromMetadata: created PVC: %s/%s", pvc.Namespace, pvc.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create PVC %s/%s in the API server: %v", pvc.Namespace, pvc.Name, err)
+		}
+		this.logger.Infof("CreateFromMetadata: created PVC: %s/%s", pvc.Namespace, pvc.Name)
 
-	err = WaitForPersistentVolumeClaimPhase(v1.ClaimBound, this.clientSet, pvc.Namespace, pvc.Name, Poll, ClaimBindingTimeout, this.logger)
-	if err != nil {
-		return nil, fmt.Errorf("PVC %q did not become Bound: %v", pvc.Name, err)
-	}
+		err = WaitForPersistentVolumeClaimPhase(v1.ClaimBound, this.clientSet, pvc.Namespace, pvc.Name, Poll, ClaimBindingTimeout, this.logger)
+		if err != nil {
+			return nil, fmt.Errorf("PVC %q did not become Bound: %v", pvc.Name, err)
+		}
 
-	this.logger.Infof("CreateFromMetadata: PVC %s/%s is bound.", pvc.Namespace, pvc.Name)
+		this.logger.Infof("CreateFromMetadata: PVC %s/%s is bound.", pvc.Namespace, pvc.Name)
+		pvcPE, err = this.pem.GetProtectedEntity(ctx, peID)
+		if err != nil {
+			errorMsg := fmt.Sprintf("Failed to get the PVC ProtectedEntity from peID %s", peID.String())
+			this.logger.WithError(err).Error(errorMsg)
+			return nil, errors.Wrap(err, errorMsg)
+		}
+		// Get the PE for the PV and overwrite it
+		components, err := pvcPE.GetComponents(ctx)
+		if err != nil {
+			errorMsg := fmt.Sprintf("Failed to get the components from peID %s", peID.String())
+			this.logger.WithError(err).Error(errorMsg)
+			return nil, errors.Wrap(err, errorMsg)
+		}
 
-	pe, err := this.pem.GetProtectedEntity(ctx, peID)
-	if err != nil {
-		this.logger.WithError(err).Errorf("Failed to get the ProtectedEntity from peID %s", peID.String())
-		return nil, err
+		// Need to extract component snapshot ID from sourceSnapshotID here
+		sourcePE, err := componentSourcePETM.GetProtectedEntity(ctx, sourceSnapshotID)
+		if err != nil {
+			errorMsg := fmt.Sprintf("Failed to get the source snapshot PE for peID %s", sourceSnapshotID.String())
+			this.logger.WithError(err).Error(errorMsg)
+			return nil, errors.Wrap(err, errorMsg)
+		}
+		err = components[0].Overwrite(ctx, sourcePE, make(map[string]map[string]interface{}), false)
+		if err != nil {
+			errorMsg := fmt.Sprintf("Failed to get the source snapshot PE for peID %s", sourceSnapshotID.String())
+			this.logger.WithError(err).Error(errorMsg)
+			return nil, errors.Wrap(err, errorMsg)
+		}
+	} else {
+		// Handle static provisioning path
 	}
 
 	this.logger.Infof("CreateFromMetadata: retrieved ProtectedEntity for ID %s", peID.String())
-	return pe, nil
+	return pvcPE, nil
 }
