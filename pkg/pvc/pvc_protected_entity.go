@@ -298,7 +298,16 @@ func (this PVCProtectedEntity) getProtectedEntityForPV(ctx context.Context, pv *
 					pvIDstr = pv.Spec.CSI.VolumeHandle
 				}
 				pvPEType := this.getComponentPEType()
-				pvPEID := astrolabe.NewProtectedEntityIDWithSnapshotID(pvPEType, pvIDstr, this.id.GetSnapshotID())
+				var pvPEID astrolabe.ProtectedEntityID
+				var err error
+				if this.GetID().HasSnapshot() {
+					pvPEID, err = getComponentID(this.GetID(), this.logger)
+					if err != nil {
+						return nil, errors.Wrapf(err, "Could not decode component snapshot ID for %s", this.GetID().String())
+					}
+				} else {
+					pvPEID = astrolabe.NewProtectedEntityID(pvPEType, pvIDstr)
+				}
 				pvPE, err := this.ppetm.pem.GetProtectedEntity(ctx, pvPEID)
 				if err != nil {
 					return nil, errors.Wrapf(err, "Could not get Protected Entity for PV %s", pvPEID.String())

@@ -209,23 +209,21 @@ func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Contex
 			}
 
 			// Need to extract component snapshot ID from sourceSnapshotID here
-			componentSnapshotIDB64Str := sourceSnapshotID.GetSnapshotID().String()
-			componentSnapshotIDStr, err := base64.StdEncoding.DecodeString(componentSnapshotIDB64Str)
+			componentSnapshotPEID, err := getComponentID(sourceSnapshotID, this.logger)
 			if err != nil {
-				errorMsg := fmt.Sprintf("Could not decode snapshot ID encoded string %s", componentSnapshotIDB64Str)
+				errorMsg := fmt.Sprintf("Failed to decode the component ID from %s", sourceSnapshotID.String())
 				this.logger.WithError(err).Error(errorMsg)
 				return nil, errors.Wrap(err, errorMsg)
 			}
-			componentSnapshotID, err := astrolabe.NewProtectedEntityIDFromString(string(componentSnapshotIDStr))
-			sourcePE, err := componentSourcePETM.GetProtectedEntity(ctx, componentSnapshotID)
+			sourcePE, err := componentSourcePETM.GetProtectedEntity(ctx, componentSnapshotPEID)
 			if err != nil {
-				errorMsg := fmt.Sprintf("Failed to get the source snapshot PE for peID %s", componentSnapshotID.String())
+				errorMsg := fmt.Sprintf("Failed to get the source snapshot PE for peID %s", componentSnapshotPEID.String())
 				this.logger.WithError(err).Error(errorMsg)
 				return nil, errors.Wrap(err, errorMsg)
 			}
 			err = components[0].Overwrite(ctx, sourcePE, make(map[string]map[string]interface{}), false)
 			if err != nil {
-				errorMsg := fmt.Sprintf("Failed to get the source snapshot PE for peID %s", componentSnapshotID.String())
+				errorMsg := fmt.Sprintf("Failed to get the source snapshot PE for peID %s", componentSnapshotPEID.String())
 				this.logger.WithError(err).Error(errorMsg)
 				return nil, errors.Wrap(err, errorMsg)
 			}
@@ -236,4 +234,15 @@ func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Contex
 
 	this.logger.Infof("CreateFromMetadata: retrieved ProtectedEntity for ID %s", peID.String())
 	return pvcPE, nil
+}
+
+func getComponentID(sourceSnapshotID astrolabe.ProtectedEntityID, logger logrus.FieldLogger) (astrolabe.ProtectedEntityID, error) {
+	componentID64Str := sourceSnapshotID.GetSnapshotID().String()
+	componentIDBytes, err := base64.StdEncoding.DecodeString(componentID64Str)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Could not decode snapshot ID encoded string %s", componentID64Str)
+		logger.WithError(err).Error(errorMsg)
+		return astrolabe.ProtectedEntityID{}, errors.Wrap(err, errorMsg)
+	}
+	return astrolabe.NewProtectedEntityIDFromString(string(componentIDBytes))
 }
