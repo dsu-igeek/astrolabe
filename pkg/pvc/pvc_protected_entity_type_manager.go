@@ -209,7 +209,7 @@ func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Contex
 			}
 
 			// Need to extract component snapshot ID from sourceSnapshotID here
-			componentSnapshotPEID, err := getComponentID(sourceSnapshotID, this.logger)
+			componentSnapshotPEID, err := getPEIDForComponentSnapshot(sourceSnapshotID, this.logger)
 			if err != nil {
 				errorMsg := fmt.Sprintf("Failed to decode the component ID from %s", sourceSnapshotID.String())
 				this.logger.WithError(err).Error(errorMsg)
@@ -236,7 +236,7 @@ func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Contex
 	return pvcPE, nil
 }
 
-func getComponentID(sourceSnapshotID astrolabe.ProtectedEntityID, logger logrus.FieldLogger) (astrolabe.ProtectedEntityID, error) {
+func getPEIDForComponentSnapshot(sourceSnapshotID astrolabe.ProtectedEntityID, logger logrus.FieldLogger) (astrolabe.ProtectedEntityID, error) {
 	componentID64Str := sourceSnapshotID.GetSnapshotID().String()
 	componentIDBytes, err := base64.StdEncoding.DecodeString(componentID64Str)
 	if err != nil {

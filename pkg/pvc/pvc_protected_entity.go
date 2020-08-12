@@ -301,7 +301,7 @@ func (this PVCProtectedEntity) getProtectedEntityForPV(ctx context.Context, pv *
 				var pvPEID astrolabe.ProtectedEntityID
 				var err error
 				if this.GetID().HasSnapshot() {
-					pvPEID, err = getComponentID(this.GetID(), this.logger)
+					pvPEID, err = getPEIDForComponentSnapshot(this.GetID(), this.logger)
 					if err != nil {
 						return nil, errors.Wrapf(err, "Could not decode component snapshot ID for %s", this.GetID().String())
 					}
