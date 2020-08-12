@@ -2,6 +2,7 @@ package pvc
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -198,26 +199,36 @@ func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Contex
 			this.logger.WithError(err).Error(errorMsg)
 			return nil, errors.Wrap(err, errorMsg)
 		}
-		// Get the PE for the PV and overwrite it
-		components, err := pvcPE.GetComponents(ctx)
-		if err != nil {
-			errorMsg := fmt.Sprintf("Failed to get the components from peID %s", peID.String())
-			this.logger.WithError(err).Error(errorMsg)
-			return nil, errors.Wrap(err, errorMsg)
-		}
+		if componentSourcePETM != nil {
+			// Get the PE for the PV and overwrite it
+			components, err := pvcPE.GetComponents(ctx)
+			if err != nil {
+				errorMsg := fmt.Sprintf("Failed to get the components from peID %s", peID.String())
+				this.logger.WithError(err).Error(errorMsg)
+				return nil, errors.Wrap(err, errorMsg)
+			}
 
-		// Need to extract component snapshot ID from sourceSnapshotID here
-		sourcePE, err := componentSourcePETM.GetProtectedEntity(ctx, sourceSnapshotID)
-		if err != nil {
-			errorMsg := fmt.Sprintf("Failed to get the source snapshot PE for peID %s", sourceSnapshotID.String())
-			this.logger.WithError(err).Error(errorMsg)
-			return nil, errors.Wrap(err, errorMsg)
-		}
-		err = components[0].Overwrite(ctx, sourcePE, make(map[string]map[string]interface{}), false)
-		if err != nil {
-			errorMsg := fmt.Sprintf("Failed to get the source snapshot PE for peID %s", sourceSnapshotID.String())
-			this.logger.WithError(err).Error(errorMsg)
-			return nil, errors.Wrap(err, errorMsg)
+			// Need to extract component snapshot ID from sourceSnapshotID here
+			componentSnapshotIDB64Str := sourceSnapshotID.GetSnapshotID().String()
+			componentSnapshotIDStr, err := base64.StdEncoding.DecodeString(componentSnapshotIDB64Str)
+			if err != nil {
+				errorMsg := fmt.Sprintf("Could not decode snapshot ID encoded string %s", componentSnapshotIDB64Str)
+				this.logger.WithError(err).Error(errorMsg)
+				return nil, errors.Wrap(err, errorMsg)
+			}
+			componentSnapshotID, err := astrolabe.NewProtectedEntityIDFromString(string(componentSnapshotIDStr))
+			sourcePE, err := componentSourcePETM.GetProtectedEntity(ctx, componentSnapshotID)
+			if err != nil {
+				errorMsg := fmt.Sprintf("Failed to get the source snapshot PE for peID %s", componentSnapshotID.String())
+				this.logger.WithError(err).Error(errorMsg)
+				return nil, errors.Wrap(err, errorMsg)
+			}
+			err = components[0].Overwrite(ctx, sourcePE, make(map[string]map[string]interface{}), false)
+			if err != nil {
+				errorMsg := fmt.Sprintf("Failed to get the source snapshot PE for peID %s", componentSnapshotID.String())
+				this.logger.WithError(err).Error(errorMsg)
+				return nil, errors.Wrap(err, errorMsg)
+			}
 		}
 	} else {
 		// Handle static provisioning path

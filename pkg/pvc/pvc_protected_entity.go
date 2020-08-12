@@ -3,6 +3,7 @@ package pvc
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -149,7 +150,10 @@ func (this PVCProtectedEntity) Snapshot(ctx context.Context, params map[string]m
 	if err != nil {
 		return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrapf(err, "PVC Snapshot write peid %s failed", components[0].GetID())
 	}
-	return subSnapshotID, nil
+	subSnapshotPEID := components[0].GetID().IDWithSnapshot(subSnapshotID)
+	subSnapshotStr := base64.StdEncoding.EncodeToString([]byte(subSnapshotPEID.String()))
+	returnSnapshotID := astrolabe.NewProtectedEntitySnapshotID(subSnapshotStr)
+	return returnSnapshotID, nil
 }
 
 func (this PVCProtectedEntity) ListSnapshots(ctx context.Context) ([]astrolabe.ProtectedEntitySnapshotID, error) {
