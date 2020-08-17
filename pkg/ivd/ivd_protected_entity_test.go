@@ -69,7 +69,10 @@ func TestSnapshotOpsUnderRaceCondition(t *testing.T) {
 	formatter.FullTimestamp = true
 	logger.SetFormatter(formatter)
 	logger.SetLevel(logrus.DebugLevel)
-	ivdPETM, err := NewIVDProtectedEntityTypeManagerFromURL(vcUrl, "/ivd", true, logger)
+	s3Config := astrolabe.S3Config{
+		URLBase: "VOID_URL",
+	}
+	ivdPETM, err := newIVDProtectedEntityTypeManagerFromURL(vcUrl, s3Config, true, logger)
 	if err != nil {
 		t.Skipf("Failed to get a new ivd PETM: %v", err)
 	}
@@ -143,7 +146,7 @@ func TestSnapshotOpsUnderRaceCondition(t *testing.T) {
 	}
 	vmRef := vmMo.Reference()
 	logger.Debugf("VM, %v(%v), created on host: %v, and datastore: %v", vmRef, vmName, vmHost, ivdDsMo.Name)
-	defer func () {
+	defer func() {
 		vimTask, err := vmMo.Destroy(ctx)
 		if err != nil {
 			t.Skipf("Failed to destroy the VM %v with err: %v", vmName, err)
@@ -153,7 +156,7 @@ func TestSnapshotOpsUnderRaceCondition(t *testing.T) {
 			t.Skipf("Failed at waiting for the destroy of VM %v with err: %v", vmName, err)
 		}
 		logger.Debugf("VM, %v(%v), destroyed", vmRef, vmName)
-	} ()
+	}()
 
 	// #3: Attach those IVDs to the VM
 	logger.Infof("Step 3: Attaching IVDs to VM %v", vmName)
@@ -209,7 +212,7 @@ func TestSnapshotOpsUnderRaceCondition(t *testing.T) {
 					t.Fatalf("[Cleanup] Failed to get IVD protected entity at the cleanup phase with err: %v", err)
 				}
 				peSnapID := astrolabe.NewProtectedEntitySnapshotID(snapshotInfo.Id.Id)
-				_, err = ivdPE.DeleteSnapshot(ctx, peSnapID)
+				_, err = ivdPE.DeleteSnapshot(ctx, peSnapID, make(map[string]map[string]interface{}))
 				if err != nil {
 					t.Fatalf("[Cleanup] Failed to DeleteSnapshot, %v, on IVD protected entity, %v with err: %v", peSnapID.GetID(), ivdPE.GetID().GetID(), err)
 				}
@@ -237,7 +240,7 @@ func TestSnapshotOpsUnderRaceCondition(t *testing.T) {
 func worker(wg *sync.WaitGroup, mutex *sync.Mutex, logger logrus.FieldLogger, vcUrl *url.URL, id int, diskId types.ID, datastore types.ManagedObjectReference, errChans []chan error) {
 	log := logger.WithFields(logrus.Fields{
 		"WorkerID": id,
-		"IvdID": diskId.Id,
+		"IvdID":    diskId.Id,
 	})
 	var err error
 	log.Debugf("Worker starting")
@@ -255,7 +258,10 @@ func worker(wg *sync.WaitGroup, mutex *sync.Mutex, logger logrus.FieldLogger, vc
 
 	ctx := context.Background()
 
-	ivdPETM, err := NewIVDProtectedEntityTypeManagerFromURL(vcUrl, "/ivd", true, log)
+	s3Config := astrolabe.S3Config{
+		URLBase: "VOID_URL",
+	}
+	ivdPETM, err := newIVDProtectedEntityTypeManagerFromURL(vcUrl, s3Config, true, log)
 	if err != nil {
 		log.Error("Failed to get a new ivd PETM")
 		return
@@ -295,7 +301,7 @@ func worker(wg *sync.WaitGroup, mutex *sync.Mutex, logger logrus.FieldLogger, vc
 	}
 
 	log.Debugf("Deleting the newly created snapshot, %v, on IVD protected entity, %v", peSnapID.GetID(), ivdPE.GetID().GetID())
-	_, err = ivdPE.DeleteSnapshot(ctx, peSnapID)
+	_, err = ivdPE.DeleteSnapshot(ctx, peSnapID, make(map[string]map[string]interface{}))
 	if err != nil {
 		log.WithError(err).Errorf("Failed to DeleteSnapshot, %v, on IVD protected entity, %v", peSnapID.GetID(), ivdPE.GetID().GetID())
 	}
@@ -309,7 +315,7 @@ func createSnapshotLocked(mutex *sync.Mutex, ctx context.Context, ivdPE astrolab
 		mutex.Unlock()
 		log.Debugf("Released the lock on CreateSnapshot")
 	}()
-	peSnapID, err := ivdPE.Snapshot(ctx)
+	peSnapID, err := ivdPE.Snapshot(ctx, nil)
 	if err != nil {
 		log.Error("Failed to snapshot the IVD protected entity")
 		return astrolabe.ProtectedEntitySnapshotID{}, err
@@ -372,18 +378,18 @@ func findAllAccessibleDatastoreByType(ctx context.Context, client *vim25.Client,
 	return dsList, nil
 }
 
-func getCreateSpec(name string, capacity int64, datastore types.ManagedObjectReference, profile []types.BaseVirtualMachineProfileSpec) (types.VslmCreateSpec) {
+func getCreateSpec(name string, capacity int64, datastore types.ManagedObjectReference, profile []types.BaseVirtualMachineProfileSpec) types.VslmCreateSpec {
 	keepAfterDeleteVm := true
 	return types.VslmCreateSpec{
 		Name:              name,
 		KeepAfterDeleteVm: &keepAfterDeleteVm,
-		BackingSpec:       &types.VslmCreateSpecDiskFileBackingSpec{
+		BackingSpec: &types.VslmCreateSpecDiskFileBackingSpec{
 			VslmCreateSpecBackingSpec: types.VslmCreateSpecBackingSpec{
-				Datastore:   datastore,
+				Datastore: datastore,
 			},
 		},
-		CapacityInMB:      capacity,
-		Profile:           profile,
+		CapacityInMB: capacity,
+		Profile:      profile,
 	}
 }
 
@@ -396,9 +402,9 @@ func getRandomName(prefix string, nDigits int) string {
 
 func vmAttachDisk(ctx context.Context, client *vim25.Client, vm types.ManagedObjectReference, diskId types.ID, datastore types.ManagedObjectReference) (*object.Task, error) {
 	req := types.AttachDisk_Task{
-		This: vm.Reference(),
-		DiskId: diskId,
-		Datastore: datastore.Reference(),
+		This:       vm.Reference(),
+		DiskId:     diskId,
+		Datastore:  datastore.Reference(),
 		UnitNumber: nil,
 	}
 
@@ -406,7 +412,6 @@ func vmAttachDisk(ctx context.Context, client *vim25.Client, vm types.ManagedObj
 	if err != nil {
 		return nil, err
 	}
-
 
 	return object.NewTask(client, res.Returnval), nil
 }
@@ -427,7 +432,7 @@ func vmAttachDiskWithWait(ctx context.Context, client *vim25.Client, vm types.Ma
 
 func vmDetachDisk(ctx context.Context, client *vim25.Client, vm types.ManagedObjectReference, diskId types.ID) (*object.Task, error) {
 	req := types.DetachDisk_Task{
-		This: vm.Reference(),
+		This:   vm.Reference(),
 		DiskId: diskId,
 	}
 
@@ -461,9 +466,9 @@ func vmCreate(ctx context.Context, client *vim25.Client, vmHost types.ManagedObj
 			VmPathName: "[" + dsName + "]",
 		},
 		Annotation: "Quick Dummy",
-		GuestId:  "otherLinux64Guest",
-		NumCPUs:  1,
-		MemoryMB:  128,
+		GuestId:    "otherLinux64Guest",
+		NumCPUs:    1,
+		MemoryMB:   128,
 		DeviceChange: []types.BaseVirtualDeviceConfigSpec{
 			&types.VirtualDeviceConfigSpec{
 				Operation: types.VirtualDeviceConfigSpecOperationAdd,
@@ -522,7 +527,10 @@ func TestBackupEncryptedIVD(t *testing.T) {
 	formatter.FullTimestamp = true
 	logger.SetFormatter(formatter)
 	logger.SetLevel(logrus.DebugLevel)
-	ivdPETM, err := NewIVDProtectedEntityTypeManagerFromURL(vcUrl, "/ivd", true, logger)
+	s3Config := astrolabe.S3Config{
+		URLBase: "VOID_URL",
+	}
+	ivdPETM, err := newIVDProtectedEntityTypeManagerFromURL(vcUrl, s3Config, true, logger)
 	if err != nil {
 		t.Skipf("Failed to get a new ivd PETM: %v", err)
 	}
@@ -533,7 +541,7 @@ func TestBackupEncryptedIVD(t *testing.T) {
 		t.Skipf("Failed to find any all accessible datastore with type, %v", datastoreType)
 	}
 	vmDs := datastores[0]
-	ivdDs := datastores[len(datastores) - 1]
+	ivdDs := datastores[len(datastores)-1]
 	encryptionProfileId, err := getEncryptionProfileId(ctx, ivdPETM.client.Client)
 	if err != nil {
 		t.Skipf("Failed to get encryption profile ID: %v", err)
@@ -563,7 +571,7 @@ func TestBackupEncryptedIVD(t *testing.T) {
 	}
 	vmRef := vmMo.Reference()
 	logger.Debugf("VM, %v(%v), created on host: %v, and datastore: %v", vmRef, vmName, vmHost, vmDsMo.Name)
-	defer func () {
+	defer func() {
 		vimTask, err := vmMo.Destroy(ctx)
 		if err != nil {
 			t.Skipf("Failed to destroy the VM %v with err: %v", vmName, err)
@@ -573,7 +581,7 @@ func TestBackupEncryptedIVD(t *testing.T) {
 			t.Skipf("Failed at waiting for the destroy of VM %v with err: %v", vmName, err)
 		}
 		logger.Debugf("VM, %v(%v), destroyed", vmRef, vmName)
-	} ()
+	}()
 
 	// #2: Poweron the VM
 	logger.Info("Step 2: Powering on a VM")
@@ -672,7 +680,7 @@ func TestBackupEncryptedIVD(t *testing.T) {
 			t.Skipf("Failed to get IVD protected entity for the IVD, %v", ivdId)
 		}
 
-		snapID, err := ivdPE.Snapshot(ctx)
+		snapID, err := ivdPE.Snapshot(ctx, nil)
 		if err != nil {
 			t.Errorf("Failed to snapshot the IVD protected entity, %v", ivdId)
 		}
@@ -703,7 +711,7 @@ func TestBackupEncryptedIVD(t *testing.T) {
 	defer func() {
 		for snapPEID, _ := range snapPEIDtoIvdPEMap {
 			s3PE := snapPEIDtos3PEMap[snapPEID]
-			_, err := s3PE.DeleteSnapshot(ctx, snapPEID.GetSnapshotID())
+			_, err := s3PE.DeleteSnapshot(ctx, snapPEID.GetSnapshotID(), make(map[string]map[string]interface{}))
 			if err != nil {
 				logger.Errorf("Failed to delete snapshot, %v, on object store: %v", snapPEID.GetSnapshotID().String(), err)
 			}
@@ -712,14 +720,14 @@ func TestBackupEncryptedIVD(t *testing.T) {
 
 	// #5.3: Delete the local IVD snapshot
 	for snapPEID, ivdPE := range snapPEIDtoIvdPEMap {
-		_, err := ivdPE.DeleteSnapshot(ctx, snapPEID.GetSnapshotID())
+		_, err := ivdPE.DeleteSnapshot(ctx, snapPEID.GetSnapshotID(), make(map[string]map[string]interface{}))
 		if err != nil {
 			t.Fatalf("Failed to delete local IVD snapshot, %v: %v", snapPEID.GetSnapshotID(), err)
 		}
 	}
 }
 
-func getProfileSpecs(profileId string) ([]types.BaseVirtualMachineProfileSpec) {
+func getProfileSpecs(profileId string) []types.BaseVirtualMachineProfileSpec {
 	var profileSpecs []types.BaseVirtualMachineProfileSpec
 	if profileId == "" {
 		profileSpecs = append(profileSpecs, &types.VirtualMachineDefaultProfileSpec{})
@@ -742,7 +750,7 @@ func getEncryptionProfileId(ctx context.Context, client *vim25.Client) (string, 
 	return pbmClient.ProfileIDByName(ctx, encryptionProfileName)
 }
 
-func setupPETM (typeName string, logger logrus.FieldLogger) (*s3repository.ProtectedEntityTypeManager, error) {
+func setupPETM(typeName string, logger logrus.FieldLogger) (*s3repository.ProtectedEntityTypeManager, error) {
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String("us-west-1")},
 	)

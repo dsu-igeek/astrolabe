@@ -76,7 +76,7 @@ func (this *ServiceAPI) handleObjectRequest(echoContext echo.Context) error {
 }
 
 func (this *ServiceAPI) snapshot(echoContext echo.Context, pe astrolabe.ProtectedEntity) {
-	snapshotID, err := pe.Snapshot(context.Background())
+	snapshotID, err := pe.Snapshot(context.Background(), make(map[string]map[string]interface{}))
 	if err != nil {
 		echoContext.String(http.StatusNotFound, "Snapshot failed for id "+pe.GetID().String()+" error = "+err.Error())
 		return
@@ -91,7 +91,7 @@ func (this *ServiceAPI) deleteSnapshot(echoContext echo.Context, pe astrolabe.Pr
 		echoContext.String(http.StatusBadRequest, "No snapshot ID specified in id "+pe.GetID().String()+" for delete")
 		return
 	}
-	deleted, err := pe.DeleteSnapshot(context.Background(), snapshotID)
+	deleted, err := pe.DeleteSnapshot(context.Background(), snapshotID, make(map[string]map[string]interface{}))
 	if err != nil {
 		echoContext.String(http.StatusNotFound, "Snapshot delete failed for id "+pe.GetID().String()+" error = "+err.Error())
 		return
@@ -127,7 +127,8 @@ func (this *ServiceAPI) handleCopyObject(echoContext echo.Context) (err error) {
 	if err = echoContext.Bind(pei); err != nil {
 		return
 	}
-	newPE, err := this.petm.CopyFromInfo(context.Background(), pei, astrolabe.AllocateNewObject)
+
+	newPE, err := this.petm.CopyFromInfo(context.Background(), pei, make(map[string]map[string]interface{}), astrolabe.AllocateNewObject)
 	if err != nil {
 		return err
 	}

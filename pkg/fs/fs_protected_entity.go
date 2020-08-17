@@ -90,14 +90,14 @@ func (this FSProtectedEntity) GetCombinedInfo(ctx context.Context) ([]astrolabe.
 /*
  * Snapshot APIs
  */
-func (this FSProtectedEntity) Snapshot(ctx context.Context) (astrolabe.ProtectedEntitySnapshotID, error) {
+func (this FSProtectedEntity) Snapshot(ctx context.Context, params map[string]map[string]interface{}) (astrolabe.ProtectedEntitySnapshotID, error) {
 	return astrolabe.ProtectedEntitySnapshotID{}, nil
 }
 
 func (this FSProtectedEntity) ListSnapshots(ctx context.Context) ([]astrolabe.ProtectedEntitySnapshotID, error) {
 	return nil, nil
 }
-func (this FSProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID) (bool, error) {
+func (this FSProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID, params map[string]map[string]interface{}) (bool, error) {
 	return true, nil
 }
 func (this FSProtectedEntity) GetInfoForSnapshot(ctx context.Context, snapshotID astrolabe.ProtectedEntitySnapshotID) (*astrolabe.ProtectedEntityInfo, error) {
@@ -110,6 +110,11 @@ func (this FSProtectedEntity) GetComponents(ctx context.Context) ([]astrolabe.Pr
 
 func (this FSProtectedEntity) GetID() astrolabe.ProtectedEntityID {
 	return this.id
+}
+
+func (this FSProtectedEntity) Overwrite(ctx context.Context, sourcePE astrolabe.ProtectedEntity, params map[string]map[string]interface{},
+	overwriteComponents bool) error {
+	return nil
 }
 
 func NewIDFromString(idStr string) vim.ID {
@@ -176,7 +181,7 @@ func tarDir(src string, writer io.Writer) error {
 
 		// update the name to correctly reflect the desired destination when untaring
 		header.Name = strings.TrimPrefix(strings.Replace(file, src, "", -1), string(filepath.Separator))
-		if (header.Name == "") {
+		if header.Name == "" {
 			return nil // Don't put an empty record for the root
 		}
 		// write the header

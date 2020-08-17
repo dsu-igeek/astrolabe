@@ -166,7 +166,8 @@ func (this *KubernetesNamespaceProtectedEntity) GetCombinedInfo(ctx context.Cont
 
 }
 
-func (this *KubernetesNamespaceProtectedEntity) Snapshot(ctx context.Context) (astrolabe.ProtectedEntitySnapshotID, error) {
+func (this *KubernetesNamespaceProtectedEntity) Snapshot(ctx context.Context, params map[string]map[string]interface{}) (astrolabe.ProtectedEntitySnapshotID, error) {
+	return astrolabe.ProtectedEntitySnapshotID{}, nil
 	if this.id.HasSnapshot() {
 		return astrolabe.ProtectedEntitySnapshotID{}, errors.New(fmt.Sprintf("pe %s is a snapshot, cannot snapshot again", this.id.String()))
 	}
@@ -175,8 +176,6 @@ func (this *KubernetesNamespaceProtectedEntity) Snapshot(ctx context.Context) (a
 		return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrap(err, "Failed to create new UUID")
 	}
 	snapshotID := astrolabe.NewProtectedEntitySnapshotID(snapshotUUID.String())
-
-
 	err = this.petm.internalRepo.WriteProtectedEntity(ctx, this, snapshotID)
 	if err != nil {
 		return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrap(err, "Failed to create new snapshot")
@@ -188,8 +187,7 @@ func (this *KubernetesNamespaceProtectedEntity) ListSnapshots(ctx context.Contex
 	return this.petm.internalRepo.ListSnapshotsForPEID(this.id)
 
 }
-func (this *KubernetesNamespaceProtectedEntity) DeleteSnapshot(ctx context.Context,
-	snapshotToDelete astrolabe.ProtectedEntitySnapshotID) (bool, error) {
+func (this *KubernetesNamespaceProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID, params map[string]map[string]interface{}) (bool, error) {
 	return false, nil
 
 }
@@ -206,4 +204,9 @@ func (this *KubernetesNamespaceProtectedEntity) GetComponents(ctx context.Contex
 
 func (this *KubernetesNamespaceProtectedEntity) GetID() astrolabe.ProtectedEntityID {
 	return this.id
+}
+
+func (this *KubernetesNamespaceProtectedEntity) Overwrite(ctx context.Context, sourcePE astrolabe.ProtectedEntity, params map[string]map[string]interface{},
+	overwriteComponents bool) error {
+	return nil
 }

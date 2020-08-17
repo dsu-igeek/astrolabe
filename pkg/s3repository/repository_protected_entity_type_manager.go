@@ -38,14 +38,14 @@ type ProtectedEntityTypeManager struct {
 	s3                                               s3.S3
 	bucket                                           string
 	objectPrefix, peinfoPrefix, mdPrefix, dataPrefix string
-	logger    logrus.FieldLogger
-	maxSegmentSize int64
-	maxBufferSize int64
-	maxParts int64
+	logger                                           logrus.FieldLogger
+	maxSegmentSize                                   int64
+	maxBufferSize                                    int64
+	maxParts                                         int64
 }
 
 func NewS3RepositoryProtectedEntityTypeManager(typeName string, session session.Session, bucket string,
-	prefix string,	logger logrus.FieldLogger) (*ProtectedEntityTypeManager, error) {
+	prefix string, logger logrus.FieldLogger) (*ProtectedEntityTypeManager, error) {
 	if !strings.HasSuffix(prefix, "/") {
 		prefix = prefix + "/"
 	}
@@ -54,18 +54,18 @@ func NewS3RepositoryProtectedEntityTypeManager(typeName string, session session.
 	mdPrefix := objectPrefix + "md/"
 	dataPrefix := objectPrefix + "data/"
 	returnPETM := ProtectedEntityTypeManager{
-		typeName:     typeName,
-		session:      session,
-		s3:           *(s3.New(&session)),
-		bucket:       bucket,
-		objectPrefix: objectPrefix,
-		peinfoPrefix: peinfoPrefix,
-		mdPrefix:     mdPrefix,
-		dataPrefix:   dataPrefix,
-		logger:       logger,
-		maxSegmentSize:	SegmentSizeLimit,
-		maxBufferSize: MaxBufferSize,
-		maxParts: MaxParts,
+		typeName:       typeName,
+		session:        session,
+		s3:             *(s3.New(&session)),
+		bucket:         bucket,
+		objectPrefix:   objectPrefix,
+		peinfoPrefix:   peinfoPrefix,
+		mdPrefix:       mdPrefix,
+		dataPrefix:     dataPrefix,
+		logger:         logger,
+		maxSegmentSize: SegmentSizeLimit,
+		maxBufferSize:  MaxBufferSize,
+		maxParts:       MaxParts,
 	}
 	logger.Infof("Created S3 repo type=%s bucket=%s prefix=%s", typeName, bucket, prefix)
 	return &returnPETM, nil
@@ -87,14 +87,14 @@ func NewS3RepositoryProtectedEntityTypeManager(typeName string, session session.
 const MD_SUFFIX = ".md"
 const DATA_SUFFIX = ".data"
 
-func (this *ProtectedEntityTypeManager) peinfoName(id astrolabe.ProtectedEntityID) (string) {
+func (this *ProtectedEntityTypeManager) peinfoName(id astrolabe.ProtectedEntityID) string {
 	if !id.HasSnapshot() {
 		panic("Cannot store objects that do not have snapshots")
 	}
 	return this.peinfoPrefix + id.String()
 }
 
-func (this *ProtectedEntityTypeManager) metadataName(id astrolabe.ProtectedEntityID) (string) {
+func (this *ProtectedEntityTypeManager) metadataName(id astrolabe.ProtectedEntityID) string {
 	if !id.HasSnapshot() {
 		panic("Cannot store objects that do not have snapshots")
 	}
@@ -113,7 +113,7 @@ func (this *ProtectedEntityTypeManager) metadataTransportsForID(id astrolabe.Pro
 	return []astrolabe.DataTransport{mdTransport}, nil
 }
 
-func (this *ProtectedEntityTypeManager) dataName(id astrolabe.ProtectedEntityID) (string) {
+func (this *ProtectedEntityTypeManager) dataName(id astrolabe.ProtectedEntityID) string {
 	if !id.HasSnapshot() {
 		panic("Cannot store objects that do not have snapshots")
 	}
@@ -231,7 +231,7 @@ func (this *ProtectedEntityTypeManager) GetProtectedEntities(ctx context.Context
 
 const peInfoFileType = "application/json"
 
-func (this *ProtectedEntityTypeManager) Copy(ctx context.Context, sourcePE astrolabe.ProtectedEntity,
+func (this *ProtectedEntityTypeManager) Copy(ctx context.Context, sourcePE astrolabe.ProtectedEntity, params map[string]map[string]interface{},
 	options astrolabe.CopyCreateOptions) (astrolabe.ProtectedEntity, error) {
 	sourcePEInfo, err := sourcePE.GetInfo(ctx)
 	if err != nil {
@@ -257,7 +257,7 @@ func (this *ProtectedEntityTypeManager) Copy(ctx context.Context, sourcePE astro
 	return this.copyInt(ctx, sourcePEInfo, options, dataReader, metadataReader)
 }
 
-func (this *ProtectedEntityTypeManager) CopyFromInfo(ctx context.Context, sourcePEInfo astrolabe.ProtectedEntityInfo,
+func (this *ProtectedEntityTypeManager) CopyFromInfo(ctx context.Context, sourcePEInfo astrolabe.ProtectedEntityInfo, params map[string]map[string]interface{},
 	options astrolabe.CopyCreateOptions) (astrolabe.ProtectedEntity, error) {
 		return this.copyInt(ctx, sourcePEInfo, options, nil, nil)
 }
@@ -312,7 +312,7 @@ func (this *ProtectedEntityTypeManager) copyInt(ctx context.Context, sourcePEInf
 		peinfo: rPEInfo,
 	}
 
-	_, err = rpe.DeleteSnapshot(ctx, id.GetSnapshotID())
+	_, err = rpe.DeleteSnapshot(ctx, id.GetSnapshotID(), make(map[string]map[string]interface{}))
 	if err != nil {
 		this.checkIfCanceledError(&err)
 		return nil, err

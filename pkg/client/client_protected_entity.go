@@ -46,13 +46,13 @@ func (this ClientProtectedEntity) GetCombinedInfo(ctx context.Context) ([]astrol
 	panic("implement me")
 }
 
-func (this ClientProtectedEntity) Snapshot(ctx context.Context) (astrolabe.ProtectedEntitySnapshotID, error) {
-	params := operations.CreateSnapshotParams{
+func (this ClientProtectedEntity) Snapshot(ctx context.Context, snapshotParams map[string]map[string]interface{}) (astrolabe.ProtectedEntitySnapshotID, error) {
+	createSnapshotParams := operations.CreateSnapshotParams{
 		Service:           this.petm.typeName,
 		ProtectedEntityID: this.id.String(),
 	}
-	params.SetTimeout(time.Minute * 10)
-	snapshotOK, err := this.petm.entityManager.restClient.Operations.CreateSnapshot(&params)
+	createSnapshotParams.SetTimeout(time.Minute * 10)
+	snapshotOK, err := this.petm.entityManager.restClient.Operations.CreateSnapshot(&createSnapshotParams)
 	if err != nil {
 		return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrap(err, "Failed in CreateSnapshot")
 	}
@@ -80,7 +80,7 @@ func (this ClientProtectedEntity) ListSnapshots(ctx context.Context) ([]astrolab
 	return returnList, nil
 }
 
-func (this ClientProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID) (bool, error) {
+func (this ClientProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID, params map[string]map[string]interface{}) (bool, error) {
 	panic("implement me")
 }
 
@@ -124,6 +124,11 @@ func (this ClientProtectedEntity) GetMetadataReader(ctx context.Context) (io.Rea
 	}
 	transports := peInfo.GetMetadataTransports()
 	return getBestReaderForTransports(ctx, transports)
+}
+
+func (this ClientProtectedEntity) Overwrite(ctx context.Context, sourcePE astrolabe.ProtectedEntity, params map[string]map[string]interface{},
+	overwriteComponents bool) error {
+	return nil
 }
 
 func getBestReaderForTransports(ctx context.Context, transports []astrolabe.DataTransport) (io.ReadCloser, error) {

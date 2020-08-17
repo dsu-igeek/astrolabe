@@ -75,7 +75,7 @@ paths:
         '200':
           description: Task nexus list
           schema:
-              $ref: '#/definitions/TaskNexusList'
+            $ref: '#/definitions/TaskNexusList'
       operationId: listTaskNexus
       description: Provides a list of current task nexus
     post:
@@ -183,12 +183,12 @@ paths:
           name: mode
           required: true
           type: string
-        - description: Info of ProtectedEntity to copy
+        - description: Copy Parameters including protected entity to copy
           in: body
           name: body
           required: true
           schema:
-            $ref: '#/definitions/ProtectedEntityInfo'
+            $ref: '#/definitions/CopyParameters'
       responses:
         '202':
           description: Create in progress
@@ -286,6 +286,12 @@ paths:
           name: protectedEntityID
           required: true
           type: string
+        - description: Parameters for the snapshot.
+          in: body
+          name: params
+          required: false
+          schema:
+            $ref: '#/definitions/OperationParamList'
       responses:
         '200':
           description: 'Snapshot created successfully, returns the new snapshot ID'
@@ -439,6 +445,34 @@ definitions:
         type: array
         items:
           $ref: '#/definitions/TaskInfo'
+  OperationPEParamItem:
+    type: object
+    properties:
+      key:
+        type: string
+      value:
+        type: object
 
+  OperationPEParamList:
+    type: array
+    items:
+      $ref: '#/definitions/OperationPEParamItem'
+  OperationParamItem:
+    type: object
+    properties:
+      key:
+        type: string
+      value:
+        $ref: '#/definitions/OperationPEParamList'
+  OperationParamList:
+    type: array
+    items:
+      $ref: '#/definitions/OperationParamItem'
+  CopyParameters:
+    type: object
+    properties:
+      protectedEntityInfo:
+          $ref: '#/definitions/ProtectedEntityInfo'
+      copyParams:
+          $ref: '#/definitions/OperationParamList'
 x-components: {}
-

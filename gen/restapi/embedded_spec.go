@@ -230,12 +230,12 @@ func init() {
             "required": true
           },
           {
-            "description": "Info of ProtectedEntity to copy",
+            "description": "Copy Parameters including protected entity to copy",
             "name": "body",
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/ProtectedEntityInfo"
+              "$ref": "#/definitions/CopyParameters"
             }
           }
         ],
@@ -368,6 +368,14 @@ func init() {
             "name": "protectedEntityID",
             "in": "path",
             "required": true
+          },
+          {
+            "description": "Parameters for the snapshot.",
+            "name": "params",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/OperationParamList"
+            }
           }
         ],
         "responses": {
@@ -396,6 +404,17 @@ func init() {
         }
       }
     },
+    "CopyParameters": {
+      "type": "object",
+      "properties": {
+        "copyParams": {
+          "$ref": "#/definitions/OperationParamList"
+        },
+        "protectedEntityInfo": {
+          "$ref": "#/definitions/ProtectedEntityInfo"
+        }
+      }
+    },
     "CreateInProgressResponse": {
       "type": "object",
       "properties": {
@@ -416,6 +435,40 @@ func init() {
         "transportType": {
           "type": "string"
         }
+      }
+    },
+    "OperationPEParamItem": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "object"
+        }
+      }
+    },
+    "OperationPEParamList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/OperationPEParamItem"
+      }
+    },
+    "OperationParamItem": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/definitions/OperationPEParamList"
+        }
+      }
+    },
+    "OperationParamList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/OperationParamItem"
       }
     },
     "ProtectedEntityID": {
@@ -809,12 +862,12 @@ func init() {
             "required": true
           },
           {
-            "description": "Info of ProtectedEntity to copy",
+            "description": "Copy Parameters including protected entity to copy",
             "name": "body",
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/ProtectedEntityInfo"
+              "$ref": "#/definitions/CopyParameters"
             }
           }
         ],
@@ -947,6 +1000,14 @@ func init() {
             "name": "protectedEntityID",
             "in": "path",
             "required": true
+          },
+          {
+            "description": "Parameters for the snapshot.",
+            "name": "params",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/OperationParamList"
+            }
           }
         ],
         "responses": {
@@ -975,6 +1036,17 @@ func init() {
         }
       }
     },
+    "CopyParameters": {
+      "type": "object",
+      "properties": {
+        "copyParams": {
+          "$ref": "#/definitions/OperationParamList"
+        },
+        "protectedEntityInfo": {
+          "$ref": "#/definitions/ProtectedEntityInfo"
+        }
+      }
+    },
     "CreateInProgressResponse": {
       "type": "object",
       "properties": {
@@ -995,6 +1067,40 @@ func init() {
         "transportType": {
           "type": "string"
         }
+      }
+    },
+    "OperationPEParamItem": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "object"
+        }
+      }
+    },
+    "OperationPEParamList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/OperationPEParamItem"
+      }
+    },
+    "OperationParamItem": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/definitions/OperationPEParamList"
+        }
+      }
+    },
+    "OperationParamList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/OperationParamItem"
       }
     },
     "ProtectedEntityID": {

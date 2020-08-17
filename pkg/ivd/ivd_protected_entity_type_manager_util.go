@@ -14,6 +14,7 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vim25types "github.com/vmware/govmomi/vim25/types"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -21,7 +22,7 @@ import (
 	"strings"
 )
 
-func findDataCenterFromAncestors(ctx context.Context, client *vim25.Client, objectRef vim25types.ManagedObjectReference, logger logrus.FieldLogger) (string, error)  {
+func findDataCenterFromAncestors(ctx context.Context, client *vim25.Client, objectRef vim25types.ManagedObjectReference, logger logrus.FieldLogger) (string, error) {
 	pc := property.DefaultCollector(client)
 	path, err := mo.Ancestors(ctx, client, pc.Reference(), objectRef)
 	if err != nil {
@@ -110,7 +111,6 @@ func findHostsOfNodeVMs(ctx context.Context, client *vim25.Client, config *rest.
 
 func findSharedDatastoresFromAllNodeVMs(ctx context.Context, client *vim25.Client, config *rest.Config, logger logrus.FieldLogger) ([]vim25types.ManagedObjectReference, error) {
 	finder := find.NewFinder(client)
-
 
 	hosts, err := findHostsOfNodeVMs(ctx, client, config, logger)
 	if err != nil {
@@ -272,8 +272,8 @@ func retrievePlatformInfoFromConfig(ctx context.Context, config *rest.Config, pa
 	var metadataList []cnstypes.BaseCnsEntityMetadata
 	metadata := &cnstypes.CnsKubernetesEntityMetadata{
 		CnsEntityMetadata: cnstypes.CnsEntityMetadata{
-			EntityName:  md.VirtualStorageObject.Config.Name,
-			Labels:      md.ExtendedMetadata,
+			EntityName: md.VirtualStorageObject.Config.Name,
+			Labels:     md.ExtendedMetadata,
 		},
 		EntityType: string(cnstypes.CnsKubernetesEntityTypePV),
 	}
@@ -281,7 +281,7 @@ func retrievePlatformInfoFromConfig(ctx context.Context, config *rest.Config, pa
 
 	var cnsVolumeCreateSpecList []cnstypes.CnsVolumeCreateSpec
 	cnsVolumeCreateSpec := cnstypes.CnsVolumeCreateSpec{
-		Name:        md.VirtualStorageObject.Config.Name,
+		Name:       md.VirtualStorageObject.Config.Name,
 		VolumeType: string(cnstypes.CnsVolumeTypeBlock),
 		Datastores: dsList,
 		Metadata: cnstypes.CnsVolumeMetadata{
@@ -353,13 +353,13 @@ func fillInClusterSpecificParams(ctx context.Context, params map[string]interfac
 	//    cns.containerCluster.clusterType -- always "KUBERNETES", and no other type available for the moment
 	//    cns.containerCluster.clusterFlavor -- the most recent govmomi version doesn't provide field to set the cluster flavor
 	//    others are not cluster specfic, but cns specific
-	reservedLabelsMap := map[string]string {
+	reservedLabelsMap := map[string]string{
 		//"cns.containerCluster.clusterFlavor",
 		//"cns.containerCluster.clusterType",
 		//"cns.k8s.pv.name",
 		//"cns.tag",
 		//"cns.version",
-		"cns.containerCluster.clusterId": clusterId,
+		"cns.containerCluster.clusterId":   clusterId,
 		"cns.containerCluster.vSphereUser": user,
 	}
 
@@ -379,8 +379,8 @@ func FilterLabelsFromMetadataForVslmAPIs(ctx context.Context, md metadata, param
 	}
 
 	for key, value := range reservedLabelsMap {
-		kvsList = append(kvsList, vim25types.KeyValue {
-			Key: key,
+		kvsList = append(kvsList, vim25types.KeyValue{
+			Key:   key,
 			Value: value,
 		})
 	}
@@ -390,8 +390,8 @@ func FilterLabelsFromMetadataForVslmAPIs(ctx context.Context, md metadata, param
 		if !ok {
 			value = label.Value
 		}
-		kvsList = append(kvsList, vim25types.KeyValue {
-			Key: label.Key,
+		kvsList = append(kvsList, vim25types.KeyValue{
+			Key:   label.Key,
 			Value: value,
 		})
 	}
@@ -410,8 +410,8 @@ func FilterLabelsFromMetadataForCnsAPIs(md metadata, prefix string, logger logru
 
 	for _, label := range md.ExtendedMetadata {
 		if !strings.HasPrefix(label.Key, prefix) {
-			kvsList = append(kvsList, vim25types.KeyValue {
-				Key: label.Key,
+			kvsList = append(kvsList, vim25types.KeyValue{
+				Key:   label.Key,
 				Value: label.Value,
 			})
 		}
@@ -481,10 +481,59 @@ func GetClusterFromParamsMap(params map[string]interface{}) (string, error) {
 }
 
 func GetInsecureFlagFromParamsMap(params map[string]interface{}) (bool, error) {
-	insecureStr, err :=  GetStringFromParamsMap(params, InsecureFlagVcParamKey)
+	insecureStr, err := GetStringFromParamsMap(params, InsecureFlagVcParamKey)
 	if err == nil {
 		return strconv.ParseBool(insecureStr)
 	}
 	return false, err
 }
 
+func RetrievePlatformInfoFromConfig(config *rest.Config, params map[string]interface{}) error {
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return errors.Errorf("Failed to get k8s clientset from the given config: %v", config)
+	}
+
+	ns := "kube-system"
+	secretApis := clientset.CoreV1().Secrets(ns)
+	vsphere_secrets := []string{"vsphere-config-secret", "csi-vsphere-config"}
+	var secret *corev1.Secret
+	for _, vsphere_secret := range vsphere_secrets {
+		secret, err = secretApis.Get(vsphere_secret, metav1.GetOptions{})
+		if err == nil {
+			break
+		}
+	}
+
+	// No valid secret found.
+	if err != nil {
+		return errors.Errorf("Failed to get k8s secret, %s", vsphere_secrets)
+	}
+
+	sEnc := string(secret.Data["csi-vsphere.conf"])
+	lines := strings.Split(sEnc, "\n")
+
+	for _, line := range lines {
+		if strings.Contains(line, "VirtualCenter") {
+			parts := strings.Split(line, "\"")
+			params["VirtualCenter"] = parts[1]
+		} else if strings.Contains(line, "=") {
+			parts := strings.Split(line, "=")
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			// Skip the quotes in the value if present
+			if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+				params[key] = value[1 : len(value)-1]
+			} else {
+				params[key] = value
+			}
+		}
+	}
+
+	// If port is missing, add an entry in the params to use the standard https port
+	if _, ok := params["port"]; !ok {
+		params["port"] = "443"
+	}
+
+	return nil
+}

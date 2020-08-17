@@ -76,7 +76,7 @@ func (this PSQLProtectedEntity) GetCombinedInfo(ctx context.Context) ([]astrolab
 	panic("implement me")
 }
 
-func (this PSQLProtectedEntity) Snapshot(ctx context.Context) (astrolabe.ProtectedEntitySnapshotID, error) {
+func (this PSQLProtectedEntity) Snapshot(ctx context.Context, params map[string]map[string]interface {}) (astrolabe.ProtectedEntitySnapshotID, error) {
 	if this.id.HasSnapshot() {
 		return astrolabe.ProtectedEntitySnapshotID{}, errors.New(fmt.Sprintf("pe %s is a snapshot, cannot snapshot again", this.id.String()))
 	}
@@ -102,7 +102,8 @@ func (this PSQLProtectedEntity) ListSnapshots(ctx context.Context) ([]astrolabe.
 	return this.petm.internalRepo.ListSnapshotsForPEID(this.id)
 }
 
-func (this PSQLProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID) (bool, error) {
+func (this PSQLProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID,
+	params map[string]map[string]interface {}) (bool, error) {
 	panic("implement me")
 }
 
@@ -166,4 +167,9 @@ func (this PSQLProtectedEntity) GetMetadataReader(ctx context.Context) (io.ReadC
 		return ioutil.NopCloser(bytes.NewReader(psqlBytes)), nil
 	}
 	return this.petm.internalRepo.GetMetadataReaderForSnapshot(this.id)
+}
+
+func (this PSQLProtectedEntity) Overwrite(ctx context.Context, sourcePE astrolabe.ProtectedEntity, params map[string]map[string]interface{},
+overwriteComponents bool) error {
+	panic("implement me")
 }

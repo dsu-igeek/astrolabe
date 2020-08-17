@@ -26,6 +26,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/labstack/echo v3.3.10+incompatible
 	github.com/labstack/gommon v0.3.0 // indirect
+	github.com/magiconair/properties v1.8.1
 	github.com/onsi/ginkgo v1.11.0 // indirect
 	github.com/onsi/gomega v1.7.0 // indirect
 	github.com/pkg/errors v0.9.1

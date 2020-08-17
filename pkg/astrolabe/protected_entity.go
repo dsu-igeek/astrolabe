@@ -20,10 +20,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/vmware-tanzu/astrolabe/gen/models"
+	"fmt"
 	"io"
 	"log"
 	"strings"
+
+	"github.com/vmware-tanzu/astrolabe/gen/models"
+)
+
+const (
+	peIDSep = "/"
 )
 
 type ProtectedEntityID struct {
@@ -50,8 +56,33 @@ func NewProtectedEntityIDFromString(peiString string) (returnPEI ProtectedEntity
 	return returnPEI, returnError
 }
 
-func NewProtectedEntityIDFromModel(mpei models.ProtectedEntityID) (ProtectedEntityID, error){
+func NewProtectedEntityIDFromModel(mpei models.ProtectedEntityID) (ProtectedEntityID, error) {
 	return NewProtectedEntityIDFromString(string(mpei))
+}
+
+func NewProtectedEntityIDWithNamespace(peType string, name string, namespace string) ProtectedEntityID {
+	var peID ProtectedEntityID
+	switch peType {
+	case "PersistentVolumeClaim", PvcPEType:
+		idStr := namespace + peIDSep + name
+		peID = NewProtectedEntityID(PvcPEType, idStr)
+	case "ivd":
+		fallthrough
+	default:
+		peID = NewProtectedEntityID(peType, name)
+	}
+	return peID
+}
+
+func GetNamespaceAndNameFromPEID(peid ProtectedEntityID) (namespace string, name string, err error) {
+	if peid.GetPeType() != PvcPEType {
+		return "", "", errors.New(fmt.Sprintf("%s + is not of type %s", peid.GetPeType(), PvcPEType))
+	}
+	parts := strings.Split(peid.GetID(), peIDSep)
+	if len(parts) != 2 {
+		return "", "", errors.New(fmt.Sprintf("%s has %d parts, expected 2", peid.GetID(), len(parts)))
+	}
+	return parts[0], parts[1], nil
 }
 
 func fillInProtectedEntityIDFromString(pei *ProtectedEntityID, peiString string) error {
@@ -140,7 +171,7 @@ func NewProtectedEntitySnapshotID(pesiString string) ProtectedEntitySnapshotID {
 	return returnPESI
 }
 
-func NewProtectedEntitySnapshotIDFromModel(mpei models.ProtectedEntitySnapshotID) (ProtectedEntitySnapshotID){
+func NewProtectedEntitySnapshotIDFromModel(mpei models.ProtectedEntitySnapshotID) ProtectedEntitySnapshotID {
 	return NewProtectedEntitySnapshotID(string(mpei))
 }
 
@@ -162,9 +193,9 @@ type ProtectedEntity interface {
 	/*
 	 * Snapshot APIs
 	 */
-	Snapshot(ctx context.Context) (ProtectedEntitySnapshotID, error)
+	Snapshot(ctx context.Context, params map[string]map[string]interface{}) (ProtectedEntitySnapshotID, error)
 	ListSnapshots(ctx context.Context) ([]ProtectedEntitySnapshotID, error)
-	DeleteSnapshot(ctx context.Context, snapshotToDelete ProtectedEntitySnapshotID) (bool, error)
+	DeleteSnapshot(ctx context.Context, snapshotToDelete ProtectedEntitySnapshotID, params map[string]map[string]interface{}) (bool, error)
 	GetInfoForSnapshot(ctx context.Context, snapshotID ProtectedEntitySnapshotID) (*ProtectedEntityInfo, error)
 
 	GetComponents(ctx context.Context) ([]ProtectedEntity, error)
@@ -179,4 +210,10 @@ type ProtectedEntity interface {
 	// best data path to provide the Reader stream.  If the ProtectedEntity does not have any metadata, nil will be
 	// returned
 	GetMetadataReader(ctx context.Context) (io.ReadCloser, error)
+
+	// Overwrite replaces the data and metadata of the ProtectedEntity with the metadata from the sourcePE
+	// The ID of the protected entity does not change
+	// Any components will also be overwritten from the components of the sourcePE if the overwriteComponents flag is set
+	Overwrite(ctx context.Context, sourcePE ProtectedEntity, params map[string]map[string]interface{},
+		overwriteComponents bool) error
 }

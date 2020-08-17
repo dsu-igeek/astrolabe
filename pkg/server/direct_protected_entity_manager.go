@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/astrolabe/pkg/astrolabe"
@@ -26,6 +27,7 @@ import (
 	"github.com/vmware-tanzu/astrolabe/pkg/ivd"
 	"github.com/vmware-tanzu/astrolabe/pkg/kubernetes"
 	"github.com/vmware-tanzu/astrolabe/pkg/psql"
+	"github.com/vmware-tanzu/astrolabe/pkg/pvc"
 	"io/ioutil"
 	"log"
 	"os"
@@ -36,14 +38,20 @@ import (
 type DirectProtectedEntityManager struct {
 	typeManager map[string]astrolabe.ProtectedEntityTypeManager
 	s3Config    astrolabe.S3Config
+	logger      logrus.FieldLogger
 }
 
-func NewDirectProtectedEntityManager(petms []astrolabe.ProtectedEntityTypeManager, s3Config astrolabe.S3Config) (returnPEM *DirectProtectedEntityManager) {
+func NewDirectProtectedEntityManager(petms []astrolabe.ProtectedEntityTypeManager, s3Config astrolabe.S3Config, logger logrus.FieldLogger) (returnPEM *DirectProtectedEntityManager) {
 	returnPEM = &DirectProtectedEntityManager{
 		typeManager: make(map[string]astrolabe.ProtectedEntityTypeManager),
+		logger:      logger,
 	}
 	for _, curPETM := range petms {
 		returnPEM.typeManager[curPETM.GetTypeName()] = curPETM
+		switch curPETM.(type) {
+		case *pvc.PVCProtectedEntityTypeManager:
+			curPETM.(*pvc.PVCProtectedEntityTypeManager).SetProtectedEntityManager(returnPEM)
+		}
 	}
 	returnPEM.s3Config = s3Config
 	return
@@ -54,42 +62,53 @@ func NewDirectProtectedEntityManagerFromConfigDir(confDirPath string) *DirectPro
 	if err != nil {
 		log.Fatalf("Could not read config files from dir %s, err: %v", confDirPath, err)
 	}
-	return NewDirectProtectedEntityManagerFromParamMap(configInfo)
+	return NewDirectProtectedEntityManagerFromParamMap(configInfo, nil)
 }
 
-func NewDirectProtectedEntityManagerFromParamMap(configInfo ConfigInfo) *DirectProtectedEntityManager {
+func NewDirectProtectedEntityManagerFromParamMap(configInfo ConfigInfo, logger logrus.FieldLogger) *DirectProtectedEntityManager {
 	petms := make([]astrolabe.ProtectedEntityTypeManager, 0) // No guarantee all configs will be valid, so don't preallocate
 	var err error
-	logger := logrus.New()
-	for serviceName, params := range configInfo.peConfigs {
+	if logger == nil {
+		logger = logrus.New()
+	}
+	for serviceName, params := range configInfo.PEConfigs {
 		var curService astrolabe.ProtectedEntityTypeManager
 		switch serviceName {
 		case "ivd":
-			curService, err = ivd.NewIVDProtectedEntityTypeManagerFromConfig(params, configInfo.s3Config, logger)
+			curService, err = ivd.NewIVDProtectedEntityTypeManagerFromConfig(params, configInfo.S3Config, logger)
 		case "k8sns":
-			curService, err = kubernetes.NewKubernetesNamespaceProtectedEntityTypeManagerFromConfig(params, configInfo.s3Config,
+			curService, err = kubernetes.NewKubernetesNamespaceProtectedEntityTypeManagerFromConfig(params, configInfo.S3Config,
 				logger)
 		case "fs":
-			curService, err = fs.NewFSProtectedEntityTypeManagerFromConfig(params, configInfo.s3Config, logger)
+			curService, err = fs.NewFSProtectedEntityTypeManagerFromConfig(params, configInfo.S3Config, logger)
 		case "psql":
-			curService, err = psql.NewPSQLProtectedEntityTypeManager(params, configInfo.s3Config, logger)
+			curService, err = psql.NewPSQLProtectedEntityTypeManager(params, configInfo.S3Config, logger)
+		case "pvc":
+			curService, err = pvc.NewPVCProtectedEntityTypeManagerFromConfig(params, configInfo.S3Config, logger)
 		default:
-
+			logger.Warnf("Unknown service type, %v", serviceName)
 		}
 		if err != nil {
-			log.Printf("Could not start service %s err=%v", serviceName, err)
+			logger.Infof("Could not start service %s err=%v", serviceName, err)
 			continue
 		}
 		if curService != nil {
 			petms = append(petms, curService)
 		}
 	}
-	return NewDirectProtectedEntityManager(petms, configInfo.s3Config)
+	return NewDirectProtectedEntityManager(petms, configInfo.S3Config, logger)
 }
 
 type ConfigInfo struct {
-	peConfigs map[string]map[string]interface{}
-	s3Config  astrolabe.S3Config
+	PEConfigs map[string]map[string]interface{}
+	S3Config  astrolabe.S3Config
+}
+
+func NewConfigInfo(peConfigs map[string]map[string]interface{}, s3Config astrolabe.S3Config) ConfigInfo {
+	return ConfigInfo{
+		PEConfigs: peConfigs,
+		S3Config:  s3Config,
+	}
 }
 
 func readConfigFiles(confDirPath string) (ConfigInfo, error) {
@@ -136,10 +155,7 @@ func readConfigFiles(confDirPath string) (ConfigInfo, error) {
 		log.Panicf("Could not read S3 configuration directory %s, err = %v\n", s3ConfFilePath, err)
 	}
 
-	return ConfigInfo{
-		peConfigs: configMap,
-		s3Config:  *s3Config,
-	}, nil
+	return NewConfigInfo(configMap, *s3Config), nil
 }
 
 func readConfigFile(confFile string) (map[string]interface{}, error) {
@@ -179,7 +195,13 @@ func readS3ConfigFile(s3ConfFile string) (*astrolabe.S3Config, error) {
 }
 
 func (this *DirectProtectedEntityManager) GetProtectedEntity(ctx context.Context, id astrolabe.ProtectedEntityID) (astrolabe.ProtectedEntity, error) {
-	return this.typeManager[id.GetPeType()].GetProtectedEntity(ctx, id)
+	typeManager, ok := this.typeManager[id.GetPeType()]
+	if !ok {
+		errMsg := fmt.Sprintf("PeType, %v, is not available", id.GetPeType())
+		this.logger.Error(errMsg)
+		return nil, errors.New(errMsg)
+	}
+	return typeManager.GetProtectedEntity(ctx, id)
 }
 
 func (this *DirectProtectedEntityManager) GetProtectedEntityTypeManager(peType string) astrolabe.ProtectedEntityTypeManager {
@@ -192,4 +214,11 @@ func (this *DirectProtectedEntityManager) ListEntityTypeManagers() []astrolabe.P
 		returnArr = append(returnArr, curPETM)
 	}
 	return returnArr
+}
+
+func (this *DirectProtectedEntityManager) RegisterExternalProtectedEntityTypeManagers(petms []astrolabe.ProtectedEntityTypeManager) {
+	for _, curPETM := range petms {
+		this.logger.Infof("Registered External ProtectedEntityTypeManager: %v", curPETM.GetTypeName())
+		this.typeManager[curPETM.GetTypeName()] = curPETM
+	}
 }

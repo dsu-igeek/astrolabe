@@ -29,11 +29,10 @@ type OpenAPIAstrolabeHandler struct {
 	tm  TaskManager
 }
 
-
 func NewOpenAPIAstrolabeHandler(pem astrolabe.ProtectedEntityManager, tm TaskManager) OpenAPIAstrolabeHandler {
 	return OpenAPIAstrolabeHandler{
 		pem: pem,
-		tm: tm,
+		tm:  tm,
 	}
 }
 func (this OpenAPIAstrolabeHandler) AttachHandlers(api *operations.AstrolabeAPI) {
@@ -91,7 +90,7 @@ func (this OpenAPIAstrolabeHandler) GetProtectedEntityInfo(params operations.Get
 	}
 	peInfo, err := pe.GetInfo(context.Background())
 	peInfoResponse := peInfo.GetModelProtectedEntityInfo()
-	return operations.NewGetProtectedEntityInfoOK().WithPayload(&peInfoResponse);
+	return operations.NewGetProtectedEntityInfoOK().WithPayload(&peInfoResponse)
 }
 
 func (this OpenAPIAstrolabeHandler) CreateSnapshot(params operations.CreateSnapshotParams) middleware.Responder {
@@ -103,11 +102,25 @@ func (this OpenAPIAstrolabeHandler) CreateSnapshot(params operations.CreateSnaps
 	if err != nil {
 
 	}
+
+	snapshotParams := make(map[string]map[string]interface{})
+
+	if params.Params != nil {
+		for _, curPEParams := range params.Params {
+			if curPEParams.Value != nil {
+				curPEParamsMap := make(map[string]interface{})
+				for _, curParam := range curPEParams.Value {
+					curPEParamsMap[curParam.Key] = curParam.Value
+				}
+				snapshotParams[curPEParams.Key] = curPEParamsMap
+			}
+		}
+	}
 	pe, err := petm.GetProtectedEntity(context.Background(), peid)
 	if err != nil {
 
 	}
-	snapshotID, err := pe.Snapshot(context.Background())
+	snapshotID, err := pe.Snapshot(context.Background(), snapshotParams)
 	if err != nil {
 
 	}
@@ -142,18 +155,30 @@ func (this OpenAPIAstrolabeHandler) ListSnapshots(params operations.ListSnapshot
 
 }
 
-
 func (this OpenAPIAstrolabeHandler) CopyProtectedEntity(params operations.CopyProtectedEntityParams) middleware.Responder {
 	petm := this.pem.GetProtectedEntityTypeManager(params.Service)
 	if petm == nil {
 
 	}
-	pei, err := astrolabe.NewProtectedEntityInfoFromModel(params.Body)
+	pei, err := astrolabe.NewProtectedEntityInfoFromModel(params.Body.ProtectedEntityInfo)
 	if err != nil {
 
 	}
+	copyParams := make(map[string]map[string]interface{})
+
+	if params.Body.CopyParams != nil {
+		for _, curPEParams := range params.Body.CopyParams {
+			if curPEParams.Value != nil {
+				curPEParamsMap := make(map[string]interface{})
+				for _, curParam := range curPEParams.Value {
+					curPEParamsMap[curParam.Key] = curParam.Value
+				}
+				copyParams[curPEParams.Key] = curPEParamsMap
+			}
+		}
+	}
 	startedTime := time.Now()
-	newPE, err := petm.CopyFromInfo(context.Background(), pei, astrolabe.AllocateNewObject)
+	newPE, err := petm.CopyFromInfo(context.Background(), pei, copyParams, astrolabe.AllocateNewObject)
 	var taskStatus astrolabe.TaskStatus
 	if err != nil {
 		taskStatus = astrolabe.Failed
@@ -170,4 +195,3 @@ func (this OpenAPIAstrolabeHandler) CopyProtectedEntity(params operations.CopyPr
 	task.Result = newPE.GetID().GetModelProtectedEntityID()
 	return operations.NewCopyProtectedEntityAccepted()
 }
-

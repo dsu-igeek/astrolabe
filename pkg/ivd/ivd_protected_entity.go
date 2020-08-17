@@ -51,7 +51,7 @@ type IVDProtectedEntity struct {
 type metadata struct {
 	VirtualStorageObject vim.VStorageObject         `xml:"virtualStorageObject"`
 	Datastore            vim.ManagedObjectReference `xml:"datastore"`
-	ExtendedMetadata     []vim.KeyValue          `xml:"extendedMetadata"`
+	ExtendedMetadata     []vim.KeyValue             `xml:"extendedMetadata"`
 }
 
 func (this IVDProtectedEntity) GetDataReader(ctx context.Context) (io.ReadCloser, error) {
@@ -75,9 +75,8 @@ func (this IVDProtectedEntity) GetDataReader(ctx context.Context) (io.ReadCloser
 	return diskReader, nil
 }
 
-
 func (this IVDProtectedEntity) copy(ctx context.Context, dataReader io.Reader,
-	metadata metadata) error {
+	metadata metadata) (int64, error) {
 	// TODO - restore metadata
 	dataWriter, err := this.getDataWriter(ctx)
 	if dataWriter != nil {
@@ -89,14 +88,16 @@ func (this IVDProtectedEntity) copy(ctx context.Context, dataReader io.Reader,
 	}
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	bufferedWriter := bufio.NewWriterSize(dataWriter, 1024*1024)
 	buf := make([]byte, 1024*1024)
-	_, err = io.CopyBuffer(bufferedWriter, dataReader, buf) // TODO - add a copy routine that we can interrupt via context
-
-	return err
+	bytesWritten, err := io.CopyBuffer(bufferedWriter, dataReader, buf) // TODO - add a copy routine that we can interrupt via context
+	if err != nil {
+		err = errors.Wrapf(err, "Failed in CopyBuffer, bytes written = %d", bytesWritten)
+	}
+	return bytesWritten, err
 }
 
 func (this IVDProtectedEntity) getDataWriter(ctx context.Context) (io.WriteCloser, error) {
@@ -107,7 +108,7 @@ func (this IVDProtectedEntity) getDataWriter(ctx context.Context) (io.WriteClose
 
 	diskWriter, vErr := gvddk_high.Open(diskConnectParam, this.logger)
 	if vErr != nil {
-		return nil, errors.New(fmt.Sprintf(vErr.Error() + " with error code: %d", vErr.VixErrorCode()))
+		return nil, errors.New(fmt.Sprintf(vErr.Error()+" with error code: %d", vErr.VixErrorCode()))
 	}
 
 	return diskWriter, nil
@@ -200,7 +201,7 @@ func (this IVDProtectedEntity) getMetadata(ctx context.Context) (metadata, error
 	}
 	datastore := vso.Config.BaseConfigInfo.GetBaseConfigInfo().Backing.GetBaseConfigInfoBackingInfo().Datastore
 	var ssID *vim.ID = nil
-	if (this.id.HasSnapshot()) {
+	if this.id.HasSnapshot() {
 
 		ssID = &vim.ID{
 			Id: this.id.GetSnapshotID().GetID(),
@@ -286,7 +287,7 @@ const waitTime = 3600 * time.Second
 /*
  * Snapshot APIs
  */
-func (this IVDProtectedEntity) Snapshot(ctx context.Context) (astrolabe.ProtectedEntitySnapshotID, error) {
+func (this IVDProtectedEntity) Snapshot(ctx context.Context, params map[string]map[string]interface{}) (astrolabe.ProtectedEntitySnapshotID, error) {
 	this.logger.Infof("CreateSnapshot called on IVD Protected Entity, %v", this.id.String())
 	var retVal astrolabe.ProtectedEntitySnapshotID
 	err := wait.PollImmediate(time.Second, time.Hour, func() (bool, error) {
@@ -304,7 +305,7 @@ func (this IVDProtectedEntity) Snapshot(ctx context.Context) (astrolabe.Protecte
 					return false, nil
 				}
 			}
-			return false, errors.Wrapf(err,"Failed at waiting for the CreateSnapshot invocation on IVD Protected Entity, %v", this.id.String())
+			return false, errors.Wrapf(err, "Failed at waiting for the CreateSnapshot invocation on IVD Protected Entity, %v", this.id.String())
 		}
 		ivdSnapshotID := ivdSnapshotIDAny.(vim.ID)
 		this.logger.Debugf("A new snapshot, %v, was created on IVD Protected Entity, %v", ivdSnapshotID.Id, this.GetID().String())
@@ -346,7 +347,7 @@ func (this IVDProtectedEntity) ListSnapshots(ctx context.Context) ([]astrolabe.P
 	}
 	return peSnapshotIDs, nil
 }
-func (this IVDProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID) (bool, error) {
+func (this IVDProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID, params map[string]map[string]interface{}) (bool, error) {
 	this.logger.Infof("DeleteSnapshot called on IVD Protected Entity, %v, with input arg, %v", this.GetID().String(), snapshotToDelete.String())
 	err := wait.PollImmediate(time.Second, time.Hour, func() (bool, error) {
 		this.logger.Debugf("Retrying DeleteSnapshot on IVD Protected Entity, %v, for one hour at the maximum", this.GetID().String())
@@ -376,7 +377,7 @@ func (this IVDProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDel
 					return false, nil
 				}
 			}
-			return false, errors.Wrapf(err,"Failed at waiting for the DeleteSnapshot invocation on IVD Protected Entity, %v, with input arg, %v", this.GetID().String(), snapshotToDelete.String())
+			return false, errors.Wrapf(err, "Failed at waiting for the DeleteSnapshot invocation on IVD Protected Entity, %v, with input arg, %v", this.GetID().String(), snapshotToDelete.String())
 		}
 		return true, nil
 	})
@@ -398,6 +399,34 @@ func (this IVDProtectedEntity) GetComponents(ctx context.Context) ([]astrolabe.P
 
 func (this IVDProtectedEntity) GetID() astrolabe.ProtectedEntityID {
 	return this.id
+}
+
+func (this IVDProtectedEntity) Overwrite(ctx context.Context, sourcePE astrolabe.ProtectedEntity, params map[string]map[string]interface{},
+	overwriteComponents bool) error {
+	// overwriteComponents is ignored because we have no components
+	if sourcePE.GetID().GetPeType() != "ivd" {
+		return errors.New("Overwrite source must be an ivd")
+	}
+	// TODO - verify that our size is >= sourcePE size
+	metadataReader, err := sourcePE.GetMetadataReader(ctx)
+	if err != nil {
+		return errors.Wrap(err, "Could not retrieve metadata reader")
+	}
+
+	dataReader, err := sourcePE.GetDataReader(ctx)
+	if err != nil {
+		return errors.Wrap(err, "Could not retrieve data reader")
+	}
+
+	md, err := readMetadataFromReader(ctx, metadataReader)
+	// To enable cross-cluster restore, need to filter out the cns specific labels, i.e. prefix: cns, in md
+	md = FilterLabelsFromMetadataForCnsAPIs(md, "cns", this.logger)
+
+	_, err = this.copy(ctx, dataReader, md)
+	if err != nil {
+		return errors.Wrapf(err, "Data copy failed from PE %s, to PE %s", this.GetID().String(), sourcePE.GetID().String())
+	}
+	return nil
 }
 
 func NewIDFromString(idStr string) vim.ID {

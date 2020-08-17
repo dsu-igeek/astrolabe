@@ -77,7 +77,7 @@ func (ProtectedEntity) GetCombinedInfo(ctx context.Context) ([]astrolabe.Protect
 	panic("implement me")
 }
 
-func (ProtectedEntity) Snapshot(ctx context.Context) (astrolabe.ProtectedEntitySnapshotID, error) {
+func (ProtectedEntity) Snapshot(ctx context.Context, params map[string]map[string]interface{}) (astrolabe.ProtectedEntitySnapshotID, error) {
 	return astrolabe.ProtectedEntitySnapshotID{}, errors.New("Snapshot not supported")
 }
 
@@ -95,7 +95,9 @@ func (this ProtectedEntity) ListSnapshots(ctx context.Context) ([]astrolabe.Prot
 	return retPESnapshotIDs, nil
 }
 
-func (this ProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID) (bool, error) {
+func (this ProtectedEntity) DeleteSnapshot(ctx context.Context,
+	snapshotToDelete astrolabe.ProtectedEntitySnapshotID,
+	params map[string]map[string]interface{}) (bool, error) {
 	var err error
 	bucket := this.rpetm.bucket
 
@@ -602,7 +604,7 @@ func (this *ProtectedEntity) cleanupOnAbortedUpload(ctx *context.Context) {
 		log.Infof("The context was canceled during copy of pe %v, proceeding with cleanup", peInfo.GetName())
 		log.Debugf("Attempting to delete any uploaded snapshots for %v", this.peinfo.GetID())
 		// New context or else downstream "withContext" calls will error out.
-		status, err := this.DeleteSnapshot(context.Background(), this.peinfo.GetID().GetSnapshotID())
+		status, err := this.DeleteSnapshot(context.Background(), this.peinfo.GetID().GetSnapshotID(), make(map[string]map[string]interface{}))
 		if err != nil {
 			log.Errorf("Received error %v when deleting local snapshots of %v during cleanup", err.Error(), this.peinfo.GetID())
 			return
@@ -625,6 +627,11 @@ func (this *ProtectedEntity) getReader(ctx context.Context, key string) (io.Read
 	segmentReader, err := newS3SegmentReader(this.rpetm.s3, s3Segments, this.rpetm.bucket)
 	s3BufferedReader := bufio.NewReaderSize(&segmentReader, 1024*1024)
 	return ioutil.NopCloser(s3BufferedReader), nil
+}
+
+func (this ProtectedEntity) Overwrite(ctx context.Context, sourcePE astrolabe.ProtectedEntity, params map[string]map[string]interface{},
+	overwriteComponents bool) error {
+	return errors.New("Cannot overwrite PEs in S3 repository")
 }
 
 type s3SegmentReader struct {
