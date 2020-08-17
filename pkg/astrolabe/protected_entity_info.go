@@ -27,9 +27,10 @@ import (
 type ProtectedEntityInfo interface {
 	GetID() ProtectedEntityID
 	GetName() string
-	GetDataTransports() []DataTransport
-	GetMetadataTransports() []DataTransport
-	GetCombinedTransports() []DataTransport
+	GetSize() int64
+	GetDataTransports() [] DataTransport
+	GetMetadataTransports() [] DataTransport
+	GetCombinedTransports() [] DataTransport
 	GetComponentIDs() []ProtectedEntityID
 	GetModelProtectedEntityInfo() models.ProtectedEntityInfo
 }
@@ -37,17 +38,19 @@ type ProtectedEntityInfo interface {
 type ProtectedEntityInfoImpl struct {
 	id                 ProtectedEntityID
 	name               string
+	size               int64
 	dataTransports     []DataTransport
 	metadataTransports []DataTransport
 	combinedTransports []DataTransport
 	componentIDs       []ProtectedEntityID
 }
 
-func NewProtectedEntityInfo(id ProtectedEntityID, name string, dataTransports []DataTransport, metadataTransports []DataTransport,
+func NewProtectedEntityInfo(id ProtectedEntityID, name string, size int64, dataTransports []DataTransport, metadataTransports []DataTransport,
 	combinedTransports []DataTransport, componentIDs []ProtectedEntityID) ProtectedEntityInfo {
 	return ProtectedEntityInfoImpl{
 		id:                 id,
 		name:               name,
+		size:               size,
 		dataTransports:     dataTransports,
 		metadataTransports: metadataTransports,
 		combinedTransports: combinedTransports,
@@ -70,6 +73,10 @@ func (this ProtectedEntityInfoImpl) GetID() ProtectedEntityID {
 
 func (this ProtectedEntityInfoImpl) GetName() string {
 	return this.name
+}
+
+func (this ProtectedEntityInfoImpl) GetSize() int64 {
+	return this.size
 }
 
 func stringsToURLs(urlStrs []string) ([]url.URL, error) {

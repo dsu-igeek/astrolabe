@@ -68,14 +68,20 @@ func TestCreateDeleteProtectedEntity(t *testing.T) {
 	}
 	peID := astrolabe.NewProtectedEntityIDWithSnapshotID("test", "unique1", astrolabe.NewProtectedEntitySnapshotID("snapshot1"))
 	peInfo := astrolabe.NewProtectedEntityInfo(peID, "testPE", nil, nil, nil, nil)
-	repoPE, err := s3petm.CopyFromInfo(context.Background(), peInfo, astrolabe.AllocateNewObject)
+	ctx := context.Background()
+	repoPE, err := s3petm.CopyFromInfo(ctx, peInfo, astrolabe.AllocateNewObject)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("Create repo PE %s\n", repoPE.GetID().String())
 
+	err = s3petm.Delete(ctx, repoPE.GetID())
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 */
+
 
 func TestCopyFSProtectedEntity(t *testing.T) {
 	s3petm, err := setupPETM(t, "fs")
@@ -229,6 +235,7 @@ func TestCopyIVDProtectedEntity(t *testing.T) {
 		}
 	} else {
 		snapID = astrolabe.NewProtectedEntitySnapshotID("1c929d85-1148-43d8-aa1d-12098b119325")
+
 	}
 	var s3PE astrolabe.ProtectedEntity
 	snapPEID := astrolabe.NewProtectedEntityIDWithSnapshotID("ivd", ivdPEID.GetID(), snapID)

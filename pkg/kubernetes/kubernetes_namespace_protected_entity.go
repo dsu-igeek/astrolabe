@@ -18,42 +18,149 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/astrolabe/pkg/astrolabe"
+	velerov1 "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
+	"github.com/vmware-tanzu/velero/pkg/backup"
+	"github.com/vmware-tanzu/velero/pkg/builder"
+	"github.com/vmware-tanzu/velero/pkg/client"
+	"github.com/vmware-tanzu/velero/pkg/discovery"
+	"github.com/vmware-tanzu/velero/pkg/podexec"
 	"io"
-	v1 "k8s.io/api/core/v1"
 )
 
 type KubernetesNamespaceProtectedEntity struct {
-	knpetm    *KubernetesNamespaceProtectedEntityTypeManager
+	petm      * KubernetesNamespaceProtectedEntityTypeManager
 	id        astrolabe.ProtectedEntityID
-	namespace *v1.Namespace
+	name      string
 	logger    logrus.FieldLogger
 }
 
 func (this *KubernetesNamespaceProtectedEntity) GetDataReader(context.Context) (io.ReadCloser, error) {
-	return nil, nil
+	if !this.id.HasSnapshot() {
+		vc := client.VeleroConfig{}
+		f := client.NewFactory("astrolabe", vc)
+
+		veleroClient, err := f.Client()
+		if err != nil {
+			return nil, err
+		}
+		discoveryClient := veleroClient.Discovery()
+
+		dynamicClient, err := f.DynamicClient()
+		if err != nil {
+			return nil, err
+		}
+
+		discoveryHelper, err := discovery.NewHelper(discoveryClient, this.logger)
+		if err != nil {
+			return nil, err
+		}
+		dynamicFactory := client.NewDynamicFactory(dynamicClient)
+
+		kubeClient, err := f.KubeClient()
+		if err != nil {
+			return nil, err
+		}
+
+		kubeClientConfig, err := f.ClientConfig()
+		if err != nil {
+			return nil, err
+		}
+		podCommandExecutor := podexec.NewPodCommandExecutor(kubeClientConfig, kubeClient.CoreV1().RESTClient())
+
+		k8sBackupper, err := backup.NewKubernetesBackupper(discoveryHelper,
+			dynamicFactory,
+			podCommandExecutor,
+			nil,
+			0)
+		if err != nil {
+			return nil, err
+		}
+
+		snapshotUUID, err := uuid.NewRandom()
+		if err != nil {
+			return nil, err
+		}
+
+		reader, writer := io.Pipe()
+		backupParams := 	builder.ForBackup(velerov1.DefaultNamespace, "astrolabe-" + snapshotUUID.String()).
+			IncludedNamespaces(this.name).Result()
+
+		request := backup.Request{
+			Backup:                    backupParams,
+		}
+
+		go this.runBackup(k8sBackupper, request, writer)
+
+		return reader, nil
+	}
+	return this.petm.internalRepo.GetDataReaderForSnapshot(this.id)
+}
+
+func (this * KubernetesNamespaceProtectedEntity)runBackup(k8sBackupper backup.Backupper, request backup.Request, writer io.WriteCloser) {
+	defer writer.Close()
+	k8sBackupper.Backup(this.logger, &request, writer, nil, nil)
 }
 
 func (this *KubernetesNamespaceProtectedEntity) GetMetadataReader(context.Context) (io.ReadCloser, error) {
 	return nil, nil
 }
 
-func NewKubernetesNamespaceProtectedEntity(knpetm *KubernetesNamespaceProtectedEntityTypeManager,
-	namespace *v1.Namespace) (*KubernetesNamespaceProtectedEntity, error) {
-	nsPEID := astrolabe.NewProtectedEntityID("k8sns", namespace.Name)
+func NewKubernetesNamespaceProtectedEntity(petm *KubernetesNamespaceProtectedEntityTypeManager, nsPEID astrolabe.ProtectedEntityID,
+	name string) (*KubernetesNamespaceProtectedEntity, error) {
 	returnPE := KubernetesNamespaceProtectedEntity{
-		knpetm:    knpetm,
+		petm:      petm,
 		id:        nsPEID,
-		namespace: namespace,
-		logger:    knpetm.logger,
+		logger:    petm.logger,
+		name: name,
 	}
 	return &returnPE, nil
 }
 
 func (this *KubernetesNamespaceProtectedEntity) GetInfo(ctx context.Context) (astrolabe.ProtectedEntityInfo, error) {
-	return nil, nil
+
+	dataS3Transport, err := astrolabe.NewS3DataTransportForPEID(this.id, this.petm.s3Config)
+	if err != nil {
+		return nil, errors.Wrap(err, "Could not create S3 data transport")
+	}
+
+	data := []astrolabe.DataTransport{
+		dataS3Transport,
+	}
+
+	mdS3Transport, err := astrolabe.NewS3MDTransportForPEID(this.id, this.petm.s3Config)
+	if err != nil {
+		return nil, errors.Wrap(err, "Could not create S3 md transport")
+	}
+
+	md := []astrolabe.DataTransport{
+		mdS3Transport,
+	}
+
+	combinedS3Transport, err := astrolabe.NewS3CombinedTransportForPEID(this.id, this.petm.s3Config)
+	if err != nil {
+		return nil, errors.Wrap(err, "Could not create S3 combined transport")
+	}
+
+	combined := []astrolabe.DataTransport{
+		combinedS3Transport,
+	}
+	
+	retVal := astrolabe.NewProtectedEntityInfo(
+		this.id,
+		this.name,
+		-1,
+		data,
+		md,
+		combined,
+		[]astrolabe.ProtectedEntityID{})
+	return retVal, nil
 }
+
 func (this *KubernetesNamespaceProtectedEntity) GetCombinedInfo(ctx context.Context) ([]astrolabe.ProtectedEntityInfo, error) {
 	return nil, nil
 
@@ -61,10 +168,23 @@ func (this *KubernetesNamespaceProtectedEntity) GetCombinedInfo(ctx context.Cont
 
 func (this *KubernetesNamespaceProtectedEntity) Snapshot(ctx context.Context, params map[string]map[string]interface{}) (astrolabe.ProtectedEntitySnapshotID, error) {
 	return astrolabe.ProtectedEntitySnapshotID{}, nil
-
+	if this.id.HasSnapshot() {
+		return astrolabe.ProtectedEntitySnapshotID{}, errors.New(fmt.Sprintf("pe %s is a snapshot, cannot snapshot again", this.id.String()))
+	}
+	snapshotUUID, err := uuid.NewRandom()
+	if err != nil {
+		return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrap(err, "Failed to create new UUID")
+	}
+	snapshotID := astrolabe.NewProtectedEntitySnapshotID(snapshotUUID.String())
+	err = this.petm.internalRepo.WriteProtectedEntity(ctx, this, snapshotID)
+	if err != nil {
+		return astrolabe.ProtectedEntitySnapshotID{}, errors.Wrap(err, "Failed to create new snapshot")
+	}
+	return snapshotID, nil
 }
+
 func (this *KubernetesNamespaceProtectedEntity) ListSnapshots(ctx context.Context) ([]astrolabe.ProtectedEntitySnapshotID, error) {
-	return nil, nil
+	return this.petm.internalRepo.ListSnapshotsForPEID(this.id)
 
 }
 func (this *KubernetesNamespaceProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID, params map[string]map[string]interface{}) (bool, error) {
