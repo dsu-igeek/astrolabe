@@ -81,7 +81,7 @@ func (this *PVCProtectedEntityTypeManager) GetProtectedEntity(ctx context.Contex
 		return nil, errors.Wrapf(err, "Could not create PVCProtectedEntity for namespace = %s, name = %s", namespace, name)
 	}
 
-	_, err = returnPE.GetPVC()
+	_, err = returnPE.GetPVC(ctx)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Could not retrieve PVC for namespace = %s, name = %s", namespace, name)
 	}
@@ -89,13 +89,13 @@ func (this *PVCProtectedEntityTypeManager) GetProtectedEntity(ctx context.Contex
 }
 
 func (this *PVCProtectedEntityTypeManager) GetProtectedEntities(ctx context.Context) ([]astrolabe.ProtectedEntityID, error) {
-	nsList, err := this.clientSet.CoreV1().Namespaces().List(metav1.ListOptions{})
+	nsList, err := this.clientSet.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, errors.Wrap(err, "Could not list namespaces")
 	}
 	retPEIDs := make([]astrolabe.ProtectedEntityID, 0)
 	for _, ns := range nsList.Items {
-		pvcList, err := this.clientSet.CoreV1().PersistentVolumeClaims(ns.Name).List(metav1.ListOptions{})
+		pvcList, err := this.clientSet.CoreV1().PersistentVolumeClaims(ns.Name).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return nil, errors.Wrap(err, "Could not list PVCs")
 		}
@@ -146,7 +146,7 @@ func (this *PVCProtectedEntityTypeManager) getDataTransports(id astrolabe.Protec
 
 // CreateFromMetadata creates a new PVC (dynamic provisioning path) with serialized PVC info
 func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Context, buf []byte,
-	sourceSnapshotID astrolabe.ProtectedEntityID, componentSourcePETM astrolabe.ProtectedEntityTypeManager, cloneFromSnapshotNamespace string, cloneFromSnapshotName string) (astrolabe.ProtectedEntity, error) {
+	sourceSnapshotID astrolabe.ProtectedEntityID, componentSourcePETM astrolabe.ProtectedEntityTypeManager, cloneFromSnapshotNamespace string, cloneFromSnapshotName string, backupRepositoryName string) (astrolabe.ProtectedEntity, error) {
 	pvc := v1.PersistentVolumeClaim{}
 	err := pvc.Unmarshal(buf)
 	if err != nil {
@@ -173,7 +173,7 @@ func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Contex
 	if dynamic {
 
 		// Creates a new PVC (dynamic provisioning path)
-		if _, err = this.clientSet.CoreV1().PersistentVolumeClaims(pvc.Namespace).Create(&pvc); err == nil || apierrs.IsAlreadyExists(err) {
+		if _, err = this.clientSet.CoreV1().PersistentVolumeClaims(pvc.Namespace).Create(ctx, &pvc, metav1.CreateOptions{}); err == nil || apierrs.IsAlreadyExists(err) {
 			// Save succeeded.
 			if err != nil {
 				this.logger.Infof("PVC %s/%s already exists, reusing", pvc.Namespace, pvc.Name)
@@ -187,7 +187,7 @@ func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Contex
 		}
 		this.logger.Infof("CreateFromMetadata: created PVC: %s/%s", pvc.Namespace, pvc.Name)
 
-		err = WaitForPersistentVolumeClaimPhase(v1.ClaimBound, this.clientSet, pvc.Namespace, pvc.Name, Poll, ClaimBindingTimeout, this.logger)
+		err = WaitForPersistentVolumeClaimPhase(ctx, v1.ClaimBound, this.clientSet, pvc.Namespace, pvc.Name, Poll, ClaimBindingTimeout, this.logger)
 		if err != nil {
 			return nil, fmt.Errorf("PVC %q did not become Bound: %v", pvc.Name, err)
 		}
@@ -226,6 +226,7 @@ func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Contex
 			cloneParams := make(map[string]interface{})
 			cloneParams["CloneFromSnapshotNamespace"] = cloneFromSnapshotNamespace
 			cloneParams["CloneFromSnapshotName"] = cloneFromSnapshotName
+			cloneParams["BackupRepositoryName"] = backupRepositoryName
 			overwriteParams["CloneFromSnapshotReference"] = cloneParams
 			err = components[0].Overwrite(ctx, sourcePE, overwriteParams, false)
 			if err != nil {
@@ -244,13 +245,12 @@ func (this *PVCProtectedEntityTypeManager) CreateFromMetadata(ctx context.Contex
 
 func getPEIDForComponentSnapshot(sourceSnapshotID astrolabe.ProtectedEntityID, logger logrus.FieldLogger) (astrolabe.ProtectedEntityID, error) {
 	componentID64Str := sourceSnapshotID.GetSnapshotID().String()
-	componentIDBytes, err := base64.StdEncoding.DecodeString(componentID64Str)
+	componentIDBytes, err := base64.RawStdEncoding.DecodeString(componentID64Str)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Could not decode snapshot ID encoded string %s", componentID64Str)
 		logger.WithError(err).Error(errorMsg)
 		return astrolabe.ProtectedEntityID{}, errors.Wrap(err, errorMsg)
 	}
-
 	return astrolabe.NewProtectedEntityIDFromString(string(componentIDBytes))
 }
 

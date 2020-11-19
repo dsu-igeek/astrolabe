@@ -127,7 +127,7 @@ func (this PSQLProtectedEntity) GetDataReader(ctx context.Context) (io.ReadClose
 		}
 		namespace := psql.Namespace
 		pghost := psql.ObjectMeta.Name
-		pgsecret, err := this.petm.KubeClient.Secrets(namespace).Get("postgres."+pghost+".credentials", metav1.GetOptions{})
+		pgsecret, err := this.petm.KubeClient.Secrets(namespace).Get(ctx, "postgres."+pghost+".credentials", metav1.GetOptions{})
 		if err != nil {
 			return nil, errors.Wrap(err, "could not retrieve secret")
 		}

@@ -42,29 +42,13 @@ func OpenFCD(serverName string, thumbPrint string, userName string, password str
 		flags,
 		readOnly,
 		transportMode)
-	res := gDiskLib.PrepareForAccess(globalParams)
-	if res != nil {
-		return DiskReaderWriter{}, res
-	}
-	conn, res := gDiskLib.ConnectEx(globalParams)
-	if res != nil {
-		gDiskLib.EndAccess(globalParams)
-		return DiskReaderWriter{}, res
-	}
-	dli, err := gDiskLib.Open(conn, globalParams)
-	diskHandle := NewDiskHandle(dli, conn, globalParams)
-	if err != nil {
-		gDiskLib.Disconnect(conn)
-		gDiskLib.EndAccess(globalParams)
-		return DiskReaderWriter{}, res
-	}
-	return NewDiskReaderWriter(diskHandle, logger), nil
+	return Open(globalParams, logger)
 }
 
 func Open(globalParams gDiskLib.ConnectParams, logger logrus.FieldLogger) (DiskReaderWriter, gDiskLib.VddkError) {
-	res := gDiskLib.PrepareForAccess(globalParams)
-	if res != nil {
-		return DiskReaderWriter{}, res
+	err := gDiskLib.PrepareForAccess(globalParams)
+	if err != nil {
+		return DiskReaderWriter{}, err
 	}
 	conn, res := gDiskLib.ConnectEx(globalParams)
 	if res != nil {
@@ -72,12 +56,18 @@ func Open(globalParams gDiskLib.ConnectParams, logger logrus.FieldLogger) (DiskR
 		return DiskReaderWriter{}, res
 	}
 	dli, err := gDiskLib.Open(conn, globalParams)
-	diskHandle := NewDiskHandle(dli, conn, globalParams)
 	if err != nil {
 		gDiskLib.Disconnect(conn)
 		gDiskLib.EndAccess(globalParams)
 		return DiskReaderWriter{}, res
 	}
+	info, err := gDiskLib.GetInfo(dli)
+	if err != nil {
+		gDiskLib.Disconnect(conn)
+		gDiskLib.EndAccess(globalParams)
+		return DiskReaderWriter{}, res
+	}
+	diskHandle := NewDiskHandle(dli, conn, globalParams, info)
 	return NewDiskReaderWriter(diskHandle, logger), nil
 }
 
@@ -158,15 +148,18 @@ type DiskConnectHandle struct {
 	dli    gDiskLib.VixDiskLibHandle
 	conn   gDiskLib.VixDiskLibConnection
 	params gDiskLib.ConnectParams
+	info   gDiskLib.VixDiskLibInfo
 }
 
-func NewDiskHandle(dli gDiskLib.VixDiskLibHandle, conn gDiskLib.VixDiskLibConnection, params gDiskLib.ConnectParams) DiskConnectHandle {
+func NewDiskHandle(dli gDiskLib.VixDiskLibHandle, conn gDiskLib.VixDiskLibConnection, params gDiskLib.ConnectParams,
+	info gDiskLib.VixDiskLibInfo) DiskConnectHandle {
 	var mutex sync.Mutex
 	return DiskConnectHandle{
 		mutex:  &mutex,
 		dli:    dli,
 		conn:   conn,
 		params: params,
+		info: info,
 	}
 }
 
@@ -184,6 +177,15 @@ func aligned(len int, off int64) bool {
 }
 
 func (this DiskConnectHandle) ReadAt(p []byte, off int64) (n int, err error) {
+	capacity := this.Capacity()
+	if off >= capacity {
+		return 0, io.EOF
+	}
+	// If we're being asked for a read beyond the end of the disk, slice the buffer down
+	if off + int64(len(p)) > capacity {
+		readLen := int32(capacity - off)
+		p = p[0:readLen]
+	}
 	startSector := off / gDiskLib.VIXDISKLIB_SECTOR_SIZE
 	var total int = 0
 
@@ -239,6 +241,12 @@ func (this DiskConnectHandle) ReadAt(p []byte, off int64) (n int, err error) {
 }
 
 func (this DiskConnectHandle) WriteAt(p []byte, off int64) (n int, err error) {
+	capacity := this.Capacity()
+	// Just error if either the beginning or the end of the write extends beyond the end
+	if off > capacity || off + int64(len(p)) > capacity{
+		return 0, io.ErrShortWrite
+	}
+
 	if (!aligned(len(p), off)) {
 		// Lock versus read and write of misaligned data so that read/modify/write cycle always gives correct
 		// behavior (read/write is atomic even though misaligned)
@@ -319,4 +327,8 @@ func (this DiskConnectHandle) Close() error {
 	}
 
 	return nil
+}
+
+func (this DiskConnectHandle) Capacity() int64 {
+	return int64(this.info.Capacity) * gDiskLib.VIXDISKLIB_SECTOR_SIZE
 }

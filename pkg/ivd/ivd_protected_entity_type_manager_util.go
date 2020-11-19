@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"github.com/vmware-tanzu/astrolabe/pkg/common/vsphere"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/cns"
 	cnstypes "github.com/vmware/govmomi/cns/types"
@@ -14,27 +15,32 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	vim25types "github.com/vmware/govmomi/vim25/types"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"strconv"
 	"strings"
 )
 
-func findDataCenterFromAncestors(ctx context.Context, client *vim25.Client, objectRef vim25types.ManagedObjectReference, logger logrus.FieldLogger) (string, error) {
+func findDatacenterPath(ctx context.Context, client *vim25.Client, objectRef vim25types.ManagedObjectReference, logger logrus.FieldLogger) (string, error) {
 	pc := property.DefaultCollector(client)
-	path, err := mo.Ancestors(ctx, client, pc.Reference(), objectRef)
+	pathElements, err := mo.Ancestors(ctx, client, pc.Reference(), objectRef)
 	if err != nil {
 		return "", err
 	}
-	for i := range path {
-		if path[i].Reference().Type == "Datacenter" {
-			logger.Debugf("Object reference=%v, DC=%v", objectRef, path[i].Name)
-			return path[i].Name, nil
+
+	var dcPath string
+	for i, pathElement := range pathElements {
+		if pathElement.Parent == nil {
+			continue
+		}
+		dcPath = dcPath + "/" + pathElement.Name
+		if pathElements[i].Self.Type == "Datacenter" {
+			break
 		}
 	}
-	return "", errors.New("Failed to find the datacenter from ancestors")
+
+	logger.Debugf("objectRef = %v, dcPath = %v", objectRef, dcPath)
+	return dcPath, nil
 }
 
 func findHostsOfNodeVMs(ctx context.Context, client *vim25.Client, config *rest.Config, logger logrus.FieldLogger) ([]vim25types.ManagedObjectReference, error) {
@@ -44,7 +50,7 @@ func findHostsOfNodeVMs(ctx context.Context, client *vim25.Client, config *rest.
 		return nil, err
 	}
 
-	nodeList, err := clientSet.CoreV1().Nodes().List(metav1.ListOptions{})
+	nodeList, err := clientSet.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +77,12 @@ func findHostsOfNodeVMs(ctx context.Context, client *vim25.Client, config *rest.
 		path := fmt.Sprintf("%v/vm/...", dc.InventoryPath)
 		vms, err := finder.VirtualMachineList(ctx, path)
 		if err != nil {
-			logger.WithError(err).Error("Failed to find the list of VMs in a data center")
+			_, ok := err.(*find.NotFoundError)
+			if ok {
+				logger.Warnf("No VMs can be found in data center, %v. Skip it.", dc.InventoryPath)
+				continue
+			}
+			logger.WithError(err).Errorf("Failed to find the list of VMs in a data center, %v", dc.InventoryPath)
 			return nil, err
 		}
 
@@ -123,25 +134,27 @@ func findSharedDatastoresFromAllNodeVMs(ctx context.Context, client *vim25.Clien
 		return nil, errors.New("No hosts can be found for node VMs")
 	}
 
-	dcNameMap := make(map[string]bool)
+	dcPathMap := make(map[string]bool)
 	for _, host := range hosts {
-		dcName, err := findDataCenterFromAncestors(ctx, client, host.Reference(), logger)
+		dcPath, err := findDatacenterPath(ctx, client, host.Reference(), logger)
 		if err != nil {
 			logger.Debugf("Failed to find a datacenter from ancestors of VM, %v", host.Reference())
 			continue
 		}
-		_, ok := dcNameMap[dcName]
-		if !ok {
-			dcNameMap[dcName] = true
-		}
+		dcPathMap[dcPath] = true
 	}
 
 	var dss []*object.Datastore
-	for dcName, _ := range dcNameMap {
-		path := fmt.Sprintf("/%v/datastore/*", dcName)
+	for dcPath, _ := range dcPathMap {
+		path := fmt.Sprintf("%v/datastore/...", dcPath)
 		dssPerDC, err := finder.DatastoreList(ctx, path)
 		if err != nil {
-			logger.WithError(err).Error("Failed to find the list of all datastores in VC")
+			_, ok := err.(*find.NotFoundError)
+			if ok {
+				logger.Warnf("No datastores can be found in data center, %v. Skip it.", dcPath)
+				continue
+			}
+			logger.WithError(err).Errorf("Failed to find the list of datastores in data center, %v", dcPath)
 			return nil, err
 		}
 		dss = append(dss, dssPerDC...)
@@ -216,46 +229,11 @@ func findSharedDatastoresFromAllNodeVMs(ctx context.Context, client *vim25.Clien
 	return dsList, nil
 }
 
-func retrievePlatformInfoFromConfig(ctx context.Context, config *rest.Config, params map[string]interface{}, logger logrus.FieldLogger) error {
-	clientSet, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		logger.WithError(err).Errorf("Failed to get k8s clientSet from the given config: %v", config)
-		return err
-	}
 
-	ns := "kube-system"
-	secretApis := clientSet.CoreV1().Secrets(ns)
-	vsphere_secret := "vsphere-config-secret"
-	// v0.18.0 requires context secret, err := secretApis.Get(ctx, vsphere_secret, metav1.GetOptions{})
-	secret, err := secretApis.Get(vsphere_secret, metav1.GetOptions{})
+func createCnsVolumeWithClusterConfig(ctx context.Context, vcConfig *vsphere.VirtualCenterConfig, config *rest.Config, client *govmomi.Client, cnsManager *vsphere.CnsManager, md metadata, logger logrus.FieldLogger) (string, error) {
+	logger.Debugf("createCnsVolumeWithClusterConfig called with args, config params and metadata: %v", md)
 
-	if err != nil {
-		logger.WithError(err).Errorf("Failed to get k8s secret, %s", vsphere_secret)
-		return err
-	}
-	sEnc := string(secret.Data["csi-vsphere.conf"])
-	lines := strings.Split(sEnc, "\n")
-
-	for _, line := range lines {
-		if strings.Contains(line, "VirtualCenter") {
-			parts := strings.Split(line, "\"")
-			params["VirtualCenter"] = parts[1]
-		} else if strings.Contains(line, "=") {
-			parts := strings.Split(line, "=")
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
-			params[key] = value[1 : len(value)-1]
-		}
-	}
-
-	return nil
-}
-
-	func createCnsVolumeWithClusterConfig(ctx context.Context, params map[string]interface{}, config *rest.Config, client *govmomi.Client, cnsClient *cns.Client, md metadata, logger logrus.FieldLogger) (string, error) {
-		logger.Debugf("createCnsVolumeWithClusterConfig called with args, config params and metadata: %v", md)
-
-		reservedLabelsMap, err := fillInClusterSpecificParams(ctx, params, logger)
-
+	reservedLabelsMap, err := fillInClusterSpecificParams(vcConfig, logger)
 	if err != nil {
 		logger.WithError(err).Error("Failed at calling fillInClusterSpecificParams")
 		return "", err
@@ -303,7 +281,7 @@ func retrievePlatformInfoFromConfig(ctx context.Context, config *rest.Config, pa
 	logger.Debugf("Provisioning volume using the spec: %v", cnsVolumeCreateSpec)
 
 	// provision volume using CNS API
-	createTask, err := cnsClient.CreateVolume(ctx, cnsVolumeCreateSpecList)
+	createTask, err := cnsManager.CreateVolume(ctx, cnsVolumeCreateSpecList)
 	if err != nil {
 		logger.WithError(err).Errorf("Failed to create volume. Error: %+v", err)
 		return "", err
@@ -334,19 +312,9 @@ func retrievePlatformInfoFromConfig(ctx context.Context, config *rest.Config, pa
 	return volumeId, nil
 }
 
-func fillInClusterSpecificParams(ctx context.Context, params map[string]interface{}, logger logrus.FieldLogger) (map[string]string, error) {
-	clusterId, err := GetClusterFromParamsMap(params)
-	if err != nil {
-		logger.WithError(err).Errorf("Failed to get Cluster params")
-		return map[string]string{}, err
-	}
 
-	user, err := GetUserFromParamsMap(params)
-	if err != nil {
-		logger.WithError(err).Errorf("Failed to get Cluster params")
-		return map[string]string{}, err
-	}
-	logger.Debugf("Retrieved cluster id, %v, and vSphere user, %v", clusterId, user)
+func fillInClusterSpecificParams(vcConfig *vsphere.VirtualCenterConfig, logger logrus.FieldLogger) (map[string]string, error) {
+	logger.Infof("Retrieved cluster id, %v, and vSphere user, %v", vcConfig.ClusterId, vcConfig.ClusterId)
 
 	// currently, we only pick up two cluster specific labels, cluster-id and vsphere-user.
 	// For the following labels,
@@ -359,20 +327,19 @@ func fillInClusterSpecificParams(ctx context.Context, params map[string]interfac
 		//"cns.k8s.pv.name",
 		//"cns.tag",
 		//"cns.version",
-		"cns.containerCluster.clusterId":   clusterId,
-		"cns.containerCluster.vSphereUser": user,
+		"cns.containerCluster.clusterId":   vcConfig.ClusterId,
+		"cns.containerCluster.vSphereUser": vcConfig.Username,
 	}
 
 	return reservedLabelsMap, nil
 }
 
-func FilterLabelsFromMetadataForVslmAPIs(ctx context.Context, md metadata, params map[string]interface{}, logger logrus.FieldLogger) (metadata, error) {
+func FilterLabelsFromMetadataForVslmAPIs(md metadata, vcConfig *vsphere.VirtualCenterConfig, logger logrus.FieldLogger) (metadata, error) {
 	var kvsList []vim25types.KeyValue
 
 	logger.Debugf("labels of CNS volume before filtering: %v", md.ExtendedMetadata)
 
-	reservedLabelsMap, err := fillInClusterSpecificParams(ctx, params, logger)
-
+	reservedLabelsMap, err := fillInClusterSpecificParams(vcConfig, logger)
 	if err != nil {
 		logger.WithError(err).Error("Failed at calling fillInClusterSpecificParams")
 		return metadata{}, err
@@ -423,7 +390,7 @@ func FilterLabelsFromMetadataForCnsAPIs(md metadata, prefix string, logger logru
 	return md
 }
 
-func CreateCnsVolumeInCluster(ctx context.Context, params map[string]interface{}, client *govmomi.Client, cnsClient *cns.Client, md metadata, logger logrus.FieldLogger) (vim25types.ID, error) {
+func CreateCnsVolumeInCluster(ctx context.Context, vcConfig *vsphere.VirtualCenterConfig, client *govmomi.Client, cnsManager *vsphere.CnsManager, md metadata, logger logrus.FieldLogger) (vim25types.ID, error) {
 	logger.Infof("CreateCnsVolumeInCluster called with args, metadata: %v", md)
 
 	// Get the cluster configuration for node, datastore information.
@@ -434,106 +401,11 @@ func CreateCnsVolumeInCluster(ctx context.Context, params map[string]interface{}
 		return vim25types.ID{}, err
 	}
 
-	volumeId, err := createCnsVolumeWithClusterConfig(ctx, params, config, client, cnsClient, md, logger)
+	volumeId, err := createCnsVolumeWithClusterConfig(ctx, vcConfig, config, client, cnsManager, md, logger)
 	if err != nil {
 		logger.WithError(err).Error("Failed to call createCnsVolumeWithClusterConfig")
 		return vim25types.ID{}, err
 	}
 
 	return NewIDFromString(volumeId), nil
-}
-
-func GetStringFromParamsMap(params map[string]interface{}, key string) (string, error) {
-	valueIF, ok := params[key]
-	if ok {
-		value, ok := valueIF.(string)
-		if !ok {
-			return "", errors.New("Value for params key " + key + " is not a string")
-		}
-		return value, nil
-	} else {
-		return "", errors.New("No such key " + key + " in params map")
-	}
-}
-
-func GetVirtualCenterFromParamsMap(params map[string]interface{}) (string, error) {
-	return GetStringFromParamsMap(params, HostVcParamKey)
-}
-
-func GetUserFromParamsMap(params map[string]interface{}) (string, error) {
-	return GetStringFromParamsMap(params, UserVcParamKey)
-}
-
-func GetPasswordFromParamsMap(params map[string]interface{}) (string, error) {
-	return GetStringFromParamsMap(params, PasswordVcParamKey)
-}
-
-func GetPortFromParamsMap(params map[string]interface{}) (string, error) {
-	return GetStringFromParamsMap(params, PortVcParamKey)
-}
-
-func GetDatacenterFromParamsMap(params map[string]interface{}) (string, error) {
-	return GetStringFromParamsMap(params, DatacenterVcParamKey)
-}
-
-func GetClusterFromParamsMap(params map[string]interface{}) (string, error) {
-	return GetStringFromParamsMap(params, ClusterVcParamKey)
-}
-
-func GetInsecureFlagFromParamsMap(params map[string]interface{}) (bool, error) {
-	insecureStr, err := GetStringFromParamsMap(params, InsecureFlagVcParamKey)
-	if err == nil {
-		return strconv.ParseBool(insecureStr)
-	}
-	return false, err
-}
-
-func RetrievePlatformInfoFromConfig(config *rest.Config, params map[string]interface{}) error {
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return errors.Errorf("Failed to get k8s clientset from the given config: %v", config)
-	}
-
-	ns := "kube-system"
-	secretApis := clientset.CoreV1().Secrets(ns)
-	vsphere_secrets := []string{"vsphere-config-secret", "csi-vsphere-config"}
-	var secret *corev1.Secret
-	for _, vsphere_secret := range vsphere_secrets {
-		secret, err = secretApis.Get(vsphere_secret, metav1.GetOptions{})
-		if err == nil {
-			break
-		}
-	}
-
-	// No valid secret found.
-	if err != nil {
-		return errors.Errorf("Failed to get k8s secret, %s", vsphere_secrets)
-	}
-
-	sEnc := string(secret.Data["csi-vsphere.conf"])
-	lines := strings.Split(sEnc, "\n")
-
-	for _, line := range lines {
-		if strings.Contains(line, "VirtualCenter") {
-			parts := strings.Split(line, "\"")
-			params["VirtualCenter"] = parts[1]
-		} else if strings.Contains(line, "=") {
-			parts := strings.Split(line, "=")
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
-			// Skip the quotes in the value if present
-			if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
-				params[key] = value[1 : len(value)-1]
-			} else {
-				params[key] = value
-			}
-		}
-	}
-
-	// If port is missing, add an entry in the params to use the standard https port
-	if _, ok := params["port"]; !ok {
-		params["port"] = "443"
-	}
-
-	return nil
 }

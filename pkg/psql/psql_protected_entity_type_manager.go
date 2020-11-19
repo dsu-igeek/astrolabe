@@ -77,8 +77,8 @@ func (this PSQLProtectedEntityTypeManager) GetProtectedEntity(ctx context.Contex
 
 }
 
-func (this PSQLProtectedEntityTypeManager) getPostgresqlForPEID(crx context.Context, id astrolabe.ProtectedEntityID) (v1.Postgresql, error) {
-	list, err := this.listAllPSQLs()
+func (this PSQLProtectedEntityTypeManager) getPostgresqlForPEID(ctx context.Context, id astrolabe.ProtectedEntityID) (v1.Postgresql, error) {
+	list, err := this.listAllPSQLs(ctx)
 	if err != nil {
 		return v1.Postgresql{}, errors.Wrap(err, "could not retrieve psqls")
 	}
@@ -90,15 +90,15 @@ func (this PSQLProtectedEntityTypeManager) getPostgresqlForPEID(crx context.Cont
 	return v1.Postgresql{}, errors.New("Not found")
 }
 
-func (this PSQLProtectedEntityTypeManager) listAllPSQLs() ([]v1.Postgresql, error) {
+func (this PSQLProtectedEntityTypeManager) listAllPSQLs(ctx context.Context) ([]v1.Postgresql, error) {
 	var options metav1.ListOptions
-	namespaces, err := this.KubeClient.Namespaces().List(options)
+	namespaces, err := this.KubeClient.Namespaces().List(ctx, options)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not retrieve namespaces")
 	}
 	var list []v1.Postgresql
 	for _, curNamespace := range namespaces.Items {
-		curList, err := this.KubeClient.AcidV1ClientSet.AcidV1().Postgresqls(curNamespace.Name).List(options)
+		curList, err := this.KubeClient.AcidV1ClientSet.AcidV1().Postgresqls(curNamespace.Name).List(ctx, options)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not retrieve postgres instances")
 		}
@@ -108,7 +108,7 @@ func (this PSQLProtectedEntityTypeManager) listAllPSQLs() ([]v1.Postgresql, erro
 }
 
 func (this PSQLProtectedEntityTypeManager) GetProtectedEntities(ctx context.Context) ([]astrolabe.ProtectedEntityID, error) {
-	list, err := this.listAllPSQLs()
+	list, err := this.listAllPSQLs(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not retrieve postgres instances")
 	}

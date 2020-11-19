@@ -72,11 +72,13 @@ func (this *KubernetesNamespaceProtectedEntity) GetDataReader(context.Context) (
 		}
 		podCommandExecutor := podexec.NewPodCommandExecutor(kubeClientConfig, kubeClient.CoreV1().RESTClient())
 
-		k8sBackupper, err := backup.NewKubernetesBackupper(discoveryHelper,
+		k8sBackupper, err := backup.NewKubernetesBackupper(veleroClient.VeleroV1(),
+			discoveryHelper,
 			dynamicFactory,
 			podCommandExecutor,
 			nil,
-			0)
+			0,
+			false)
 		if err != nil {
 			return nil, err
 		}

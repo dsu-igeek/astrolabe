@@ -385,7 +385,81 @@ func (this *ProtectedEntity) uploadSegment(ctx context.Context, baseName string,
 		// If the part has already been uploaded, we will skip
 		uploadPart := completedParts[partNumber] == nil
 		if uploadPart {
-			bytesRead, err := reader.Read(uploadBuffer)
+			bytesRead, err := io.ReadFull(reader, uploadBuffer)
+			if err != nil {
+				if err == io.EOF || err == io.ErrUnexpectedEOF {
+					moreBits = false
+				} else {
+					return bytesUploaded, err
+				}
+			}
+			if bytesRead > 0 {
+				thisPartNumber := partNumber + 1 // Copy because CompletedPart takes a pointer to the partNumber.
+				// AWS part numbers start at 1, so we offset here
+				uploadSlice := uploadBuffer[0:bytesRead]
+				bufferReader := bytes.NewReader(uploadSlice)
+				if partNumber == 0 && bytesRead < MinMultiPartSize {
+					// We don't have enough data to do a multipart upload
+					uploader := s3manager.NewUploader(&this.rpetm.session)
+
+					result, err := uploader.UploadWithContext(ctx, &s3manager.UploadInput{
+						Body:   bufferReader,
+						Bucket: awsBucketName,
+						Key:    awsKey,
+					})
+					if err == nil {
+						log.Infof("Successfully uploaded to", result.Location)
+					}
+					if err != nil {
+						return bytesUploaded, err
+					}
+					bytesUploaded += int64(bytesRead)
+					moreBits = false;
+				} else {
+					// Wait until here to start the multi-part upload in case we're too small
+					if uploadID == "" {
+						uploadInput := &s3.CreateMultipartUploadInput{
+							Bucket: awsBucketName,
+							Key:    awsKey,
+						}
+
+						resp, err := this.rpetm.s3.CreateMultipartUploadWithContext(ctx, uploadInput)
+						if err != nil {
+							return 0, err
+						}
+
+						uploadID = *resp.UploadId
+					}
+
+					partInput := &s3.UploadPartInput{
+						Body:          bufferReader,
+						Bucket:        awsBucketName,
+						Key:           awsKey,
+						PartNumber:    aws.Int64(thisPartNumber),
+						UploadId:      &uploadID,
+						ContentLength: aws.Int64(int64(bytesRead)),
+					}
+					partOutput, err := this.rpetm.s3.UploadPartWithContext(ctx, partInput)
+					if err != nil {
+						return bytesUploaded, err
+					}
+
+					log.Debug(partOutput)
+					bytesRead64 := int64(bytesRead)
+					completedPart := s3.Part{
+						ETag:       partOutput.ETag,
+						PartNumber: &thisPartNumber,
+						Size:       &bytesRead64,
+					}
+					completedParts[partNumber] = &completedPart
+					partNumber++
+				}
+				bytesUploaded += int64(bytesRead)
+			}
+		} else {
+			log.Infof("Skipping part %d, found pre-existing part", partNumber)
+			bytesToSkip := *completedParts[partNumber].Size
+			bytesSkipped, err := skipBytes(reader, bytesToSkip, uploadBuffer)
 			if err != nil {
 				if err == io.EOF {
 					moreBits = false
@@ -393,80 +467,12 @@ func (this *ProtectedEntity) uploadSegment(ctx context.Context, baseName string,
 					return bytesUploaded, err
 				}
 			}
-			thisPartNumber := partNumber + 1 // Copy because CompletedPart takes a pointer to the partNumber.
-			// AWS part numbers start at 1, so we offset here
-			uploadSlice := uploadBuffer[0:bytesRead]
-			bufferReader := bytes.NewReader(uploadSlice)
-			if partNumber == 0 && bytesRead < MinMultiPartSize {
-				// We don't have enough data to do a multipart upload
-				uploader := s3manager.NewUploader(&this.rpetm.session)
-
-				result, err := uploader.UploadWithContext(ctx, &s3manager.UploadInput{
-					Body:   bufferReader,
-					Bucket: awsBucketName,
-					Key:    awsKey,
-				})
-				if err == nil {
-					log.Infof("Successfully uploaded to", result.Location)
-				}
-
-				if err != nil {
-					return bytesUploaded, err
-				}
-				bytesUploaded += int64(bytesRead)
-				moreBits = false
-			} else {
-				// Wait until here to start the multi-part upload in case we're too small
-				if uploadID == "" {
-					uploadInput := &s3.CreateMultipartUploadInput{
-						Bucket: awsBucketName,
-						Key:    awsKey,
-					}
-					resp, err := this.rpetm.s3.CreateMultipartUploadWithContext(ctx, uploadInput)
-					if err != nil {
-						return 0, err
-					}
-					uploadID = *resp.UploadId
-				}
-
-				partInput := &s3.UploadPartInput{
-					Body:          bufferReader,
-					Bucket:        awsBucketName,
-					Key:           awsKey,
-					PartNumber:    aws.Int64(thisPartNumber),
-					UploadId:      &uploadID,
-					ContentLength: aws.Int64(int64(bytesRead)),
-				}
-				partOutput, err := this.rpetm.s3.UploadPartWithContext(ctx, partInput)
-				if err != nil {
-					return bytesUploaded, err
-				}
-
-				log.Debug(partOutput)
-				bytesRead64 := int64(bytesRead)
-				completedPart := s3.Part{
-					ETag:       partOutput.ETag,
-					PartNumber: &thisPartNumber,
-					Size:       &bytesRead64,
-				}
-				completedParts[partNumber] = &completedPart
-			}
-			bytesUploaded += int64(bytesRead)
-		} else {
-			log.Infof("Skipping part %d, found pre-existing part", partNumber)
-			bytesSkipped, err := skipBytes(reader, *completedParts[partNumber].Size, uploadBuffer)
-			if err == io.EOF {
-				moreBits = false
-			} else {
-				return bytesUploaded, err
-			}
-			if bytesSkipped != bytesUploaded {
-				return bytesUploaded, errors.Errorf("Did not skip correct number of bytes bytesSkipped: %d expected:%d", bytesSkipped, *completedParts[partNumber].Size)
+			if bytesSkipped != bytesToSkip {
+				return bytesUploaded, errors.Errorf("Did not skip correct number of bytes bytesSkipped: %d expected:%d", bytesSkipped, bytesToSkip)
 			}
 			bytesUploaded += *completedParts[partNumber].Size
-
+			partNumber++
 		}
-		partNumber++
 		if bytesUploaded >= maxSegmentSize {
 			moreBits = false
 		}
@@ -476,9 +482,13 @@ func (this *ProtectedEntity) uploadSegment(ctx context.Context, baseName string,
 	if uploadID != "" {
 		parts := make([]*s3.CompletedPart, partNumber)
 		for curPartNum, curPart := range completedParts[0:partNumber] {
-			parts[curPartNum] = &s3.CompletedPart{
-				ETag:       curPart.ETag,
-				PartNumber: curPart.PartNumber, // This part number was already offset from 1
+			if curPart != nil {
+				parts[curPartNum] = &s3.CompletedPart{
+					ETag:       curPart.ETag,
+					PartNumber: curPart.PartNumber, // This part number was already offset from 1
+				}
+			} else {
+				log.Infof("Skipping nil part %d\n", curPartNum)
 			}
 		}
 		completedInput := s3.CompleteMultipartUploadInput{
@@ -494,7 +504,7 @@ func (this *ProtectedEntity) uploadSegment(ctx context.Context, baseName string,
 		if err != nil {
 			return bytesUploaded, err
 		}
-		log.Print(completedOutput)
+		log.Infof("Segment upload completed: %v", completedOutput)
 	}
 	return bytesUploaded, err
 }

@@ -100,7 +100,7 @@ func (this *KubernetesNamespaceProtectedEntityTypeManager) GetProtectedEntity(ct
 }
 
 func (this *KubernetesNamespaceProtectedEntityTypeManager) getNamespaceForPEID(ctx context.Context, id astrolabe.ProtectedEntityID) (*v1.Namespace, error){
-	namespaces, err := this.clientset.CoreV1().Namespaces().List(metav1.ListOptions{})
+	namespaces, err := this.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, errors.Wrap(err, "Could not retrieve namespaces")
 	}
@@ -112,7 +112,8 @@ func (this *KubernetesNamespaceProtectedEntityTypeManager) getNamespaceForPEID(c
 	return nil, errors.New("Not found")
 }
 func (this *KubernetesNamespaceProtectedEntityTypeManager) GetProtectedEntities(ctx context.Context) ([]astrolabe.ProtectedEntityID, error) {
-	namespaceList, err := this.clientset.CoreV1().Namespaces().List(metav1.ListOptions{})
+	namespaceList, err := this.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+
 	if err != nil {
 		return []astrolabe.ProtectedEntityID{}, err
 	}

@@ -23,6 +23,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/astrolabe/pkg/astrolabe"
+	"github.com/vmware-tanzu/astrolabe/pkg/util"
 	"github.com/vmware/govmomi/vim25/soap"
 	vim "github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
@@ -34,8 +35,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"strings"
 
-	//	"github.com/vmware/govmomi/vslm"
 	"context"
+	"github.com/vmware/govmomi/vslm"
+	vslmtypes "github.com/vmware/govmomi/vslm/types"
 	"time"
 )
 
@@ -115,20 +117,20 @@ func (this IVDProtectedEntity) getDataWriter(ctx context.Context) (io.WriteClose
 }
 
 func (this IVDProtectedEntity) getDiskConnectionParams(ctx context.Context, readOnly bool) (gDiskLib.ConnectParams, error) {
-	url := this.ipetm.client.URL()
+	vc := this.ipetm.vcenter
+	_, _, err := vc.Connect(ctx)
+	if err != nil {
+		this.logger.Errorf("Failed to connect to VC")
+		return gDiskLib.ConnectParams{}, err
+	}
+	url := vc.Client.Client.URL()
 	serverName := url.Hostname()
-	userName, err := GetUserFromParamsMap(this.ipetm.vcParams)
-	if err != nil {
-		return gDiskLib.ConnectParams{}, err
-	}
-	password, err := GetPasswordFromParamsMap(this.ipetm.vcParams)
-	if err != nil {
-		return gDiskLib.ConnectParams{}, err
-	}
+	userName := vc.Config.Username
+	password := vc.Config.Password
 	fcdId := this.id.GetID()
-	vso, err := this.ipetm.vsom.Retrieve(context.Background(), NewVimIDFromPEID(this.id))
+
+	vso, err := this.ipetm.vslmManager.Retrieve(ctx, NewVimIDFromPEID(this.id))
 	if err != nil {
-		//return gdisklib.DiskHandle{}, err
 		return gDiskLib.ConnectParams{}, err
 	}
 	datastore := vso.Config.Backing.GetBaseConfigInfoBackingInfo().Datastore.String()
@@ -195,7 +197,7 @@ func (this IVDProtectedEntity) getMetadata(ctx context.Context) (metadata, error
 	vsoID := vim.ID{
 		Id: this.id.GetID(),
 	}
-	vso, err := this.ipetm.vsom.Retrieve(ctx, vsoID)
+	vso, err := this.ipetm.vslmManager.Retrieve(ctx, vsoID)
 	if err != nil {
 		return metadata{}, err
 	}
@@ -207,7 +209,7 @@ func (this IVDProtectedEntity) getMetadata(ctx context.Context) (metadata, error
 			Id: this.id.GetSnapshotID().GetID(),
 		}
 	}
-	extendedMetadata, err := this.ipetm.vsom.RetrieveMetadata(ctx, vsoID, ssID, "")
+	extendedMetadata, err := this.ipetm.vslmManager.RetrieveMetadata(ctx, vsoID, ssID, "")
 
 	retVal := metadata{
 		VirtualStorageObject: *vso,
@@ -258,7 +260,7 @@ func (this IVDProtectedEntity) GetInfo(ctx context.Context) (astrolabe.Protected
 	vsoID := vim.ID{
 		Id: this.id.GetID(),
 	}
-	vso, err := this.ipetm.vsom.Retrieve(ctx, vsoID)
+	vso, err := this.ipetm.vslmManager.Retrieve(ctx, vsoID)
 	if err != nil {
 		return nil, errors.Wrap(err, "Retrieve failed")
 	}
@@ -290,41 +292,67 @@ const waitTime = 3600 * time.Second
 func (this IVDProtectedEntity) Snapshot(ctx context.Context, params map[string]map[string]interface{}) (astrolabe.ProtectedEntitySnapshotID, error) {
 	this.logger.Infof("CreateSnapshot called on IVD Protected Entity, %v", this.id.String())
 	var retVal astrolabe.ProtectedEntitySnapshotID
-	err := wait.PollImmediate(time.Second, time.Hour, func() (bool, error) {
-		this.logger.Infof("Retrying CreateSnapshot on IVD Protected Entity, %v, for one hour at the maximum", this.GetID().String())
-		vslmTask, err := this.ipetm.vsom.CreateSnapshot(ctx, NewVimIDFromPEID(this.GetID()), "AstrolabeSnapshot")
+	retryInterval := time.Second
+	retryCount := 0
+	retrieveSnapDetailsErr := 0
+	err := wait.PollImmediate(retryInterval, time.Hour, func() (bool, error) {
+		this.logger.Infof("Retrying CreateSnapshot on IVD Protected Entity, %v, for one hour at the maximum, Current retry count: %d", this.GetID().String(), retryCount)
+		var vslmTask *vslm.Task
+		vslmTask, err := this.ipetm.vslmManager.CreateSnapshot(ctx, NewVimIDFromPEID(this.GetID()), "AstrolabeSnapshot")
 		if err != nil {
 			return false, errors.Wrapf(err, "Failed to create a task for the CreateSnapshot invocation on IVD Protected Entity, %v", this.id.String())
 		}
+		this.logger.Infof("Retrieved VSLM task %s to track CreateSnapshot on IVD %s", vslmTask.Value, this.id.String())
+		retryCount++
+		start := time.Now()
 		ivdSnapshotIDAny, err := vslmTask.Wait(ctx, waitTime)
+		this.logger.Infof("Waited for %s to retrieve Task %s status.", time.Now().Sub(start), vslmTask.Value)
 		if err != nil {
 			if soap.IsVimFault(err) {
 				_, ok := soap.ToVimFault(err).(*vim.InvalidState)
 				if ok {
-					this.logger.WithError(err).Error("There is some operation, other than this CreateSnapshot invocation, on the VM attached still being protected by its VM state. Will retry")
+					this.logger.WithError(err).Errorf("There is some operation, other than this CreateSnapshot invocation, on the VM attached still being protected by its VM state. Will retry in %v second(s)", retryInterval)
+					return false, nil
+				}
+				_, ok = soap.ToVimFault(err).(*vslmtypes.VslmSyncFault)
+				if ok {
+					this.logger.WithError(err).Errorf("CreateSnapshot failed with VslmSyncFault possibly due to race between concurrent DeleteSnapshot invocation. Will retry in %v second(s)", retryInterval)
+					return false, nil
+				}
+				_, ok = soap.ToVimFault(err).(*vim.NotFound)
+				if ok {
+					this.logger.WithError(err).Errorf("CreateSnapshot failed with NotFound. Will retry in %v second(s)", retryInterval)
 					return false, nil
 				}
 			}
-			return false, errors.Wrapf(err, "Failed at waiting for the CreateSnapshot invocation on IVD Protected Entity, %v", this.id.String())
+			if util.IsConnectionResetError(err) {
+				this.logger.WithError(err).Errorf("Network issue: connection reset by peer. Will retry in %v second(s)", retryInterval)
+				return false, nil
+			}
+			this.logger.Errorf("Error on CreateSnapshot: %+s", err.Error())
+			return false, errors.Wrapf(err, "Failed at waiting for the CreateSnapshot invocation on IVD Protected Entity, %v, Retry-Count: %d", this.id.String(), retryCount)
 		}
 		ivdSnapshotID := ivdSnapshotIDAny.(vim.ID)
-		this.logger.Debugf("A new snapshot, %v, was created on IVD Protected Entity, %v", ivdSnapshotID.Id, this.GetID().String())
+		this.logger.Infof("A new snapshot, %v, was created on IVD Protected Entity, %v, Retry-Count: %d, RetrieveSnapshotErr: %d", ivdSnapshotID.Id, this.GetID().String(), retryCount, retrieveSnapDetailsErr)
 
 		// Will try RetrieveSnapshotDetail right after the completion of CreateSnapshot to make sure there is no impact from race condition
-		_, err = this.ipetm.vsom.RetrieveSnapshotDetails(ctx, NewVimIDFromPEID(this.GetID()), ivdSnapshotID)
+		_, err = this.ipetm.vslmManager.RetrieveSnapshotDetails(ctx, NewVimIDFromPEID(this.GetID()), ivdSnapshotID)
 		if err != nil {
+			retrieveSnapDetailsErr++
 			if soap.IsSoapFault(err) {
 				faultMsg := soap.ToSoapFault(err).String
 				if strings.Contains(faultMsg, "A specified parameter was not correct: snapshotId") {
 					this.logger.WithError(err).Error("Unexpected InvalidArgument SOAP fault due to the known race condition. Will retry")
 					return false, nil
 				}
-				this.logger.WithError(err).Error("Unexpected SOAP fault")
 			}
-			return false, errors.Wrapf(err, "Failed at retrieving the snapshot detail post the completion of CreateSnapshot invocation on, %v", this.id.String())
+			this.logger.WithError(err).Warnf("Failed at retrieving the snapshot details post the" +
+				" completion of CreateSnapshot on %s, proceeding to use Snapshot %s anyways", this.id.String(), ivdSnapshotID.Id)
+		} else {
+			this.logger.Infof("The retrieval of the newly created snapshot, %s on IVD %s, " +
+				"is completed successfully, Retry-Count: %d, RetrieveSnapshotErr: %d",
+				ivdSnapshotID.Id, this.id.String(), retryCount, retrieveSnapDetailsErr)
 		}
-		this.logger.Debugf("The retrieval of the newly created snapshot, %v, is completed successfully", ivdSnapshotID.Id)
-
 		retVal = astrolabe.NewProtectedEntitySnapshotID(ivdSnapshotID.Id)
 		return true, nil
 	})
@@ -337,7 +365,7 @@ func (this IVDProtectedEntity) Snapshot(ctx context.Context, params map[string]m
 }
 
 func (this IVDProtectedEntity) ListSnapshots(ctx context.Context) ([]astrolabe.ProtectedEntitySnapshotID, error) {
-	snapshotInfo, err := this.ipetm.vsom.RetrieveSnapshotInfo(ctx, NewVimIDFromPEID(this.GetID()))
+	snapshotInfo, err := this.ipetm.vslmManager.RetrieveSnapshotInfo(ctx, NewVimIDFromPEID(this.GetID()))
 	if err != nil {
 		return nil, errors.Wrap(err, "RetrieveSnapshotInfo failed")
 	}
@@ -345,13 +373,14 @@ func (this IVDProtectedEntity) ListSnapshots(ctx context.Context) ([]astrolabe.P
 	for _, curSnapshotInfo := range snapshotInfo {
 		peSnapshotIDs = append(peSnapshotIDs, astrolabe.NewProtectedEntitySnapshotID(curSnapshotInfo.Id.Id))
 	}
+	this.logger.Infof("Retrieved %d snapshots for pe-id: %s, snapshots= %v", len(peSnapshotIDs), this.GetID().String(), peSnapshotIDs)
 	return peSnapshotIDs, nil
 }
 func (this IVDProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDelete astrolabe.ProtectedEntitySnapshotID, params map[string]map[string]interface{}) (bool, error) {
 	this.logger.Infof("DeleteSnapshot called on IVD Protected Entity, %v, with input arg, %v", this.GetID().String(), snapshotToDelete.String())
 	err := wait.PollImmediate(time.Second, time.Hour, func() (bool, error) {
 		this.logger.Debugf("Retrying DeleteSnapshot on IVD Protected Entity, %v, for one hour at the maximum", this.GetID().String())
-		vslmTask, err := this.ipetm.vsom.DeleteSnapshot(ctx, NewVimIDFromPEID(this.GetID()), NewVimSnapshotIDFromPESnapshotID(snapshotToDelete))
+		vslmTask, err := this.ipetm.vslmManager.DeleteSnapshot(ctx, NewVimIDFromPEID(this.GetID()), NewVimSnapshotIDFromPESnapshotID(snapshotToDelete))
 		if err != nil {
 			return false, errors.Wrapf(err, "Failed to create a task for the DeleteSnapshot invocation on IVD Protected Entity, %v, with input arg, %v", this.GetID().String(), snapshotToDelete.String())
 		}
@@ -376,6 +405,10 @@ func (this IVDProtectedEntity) DeleteSnapshot(ctx context.Context, snapshotToDel
 					this.logger.WithError(err).Error("An error occurred while consolidating disks: Failed to lock the file. Will retry")
 					return false, nil
 				}
+			}
+			if util.IsConnectionResetError(err) {
+				this.logger.WithError(err).Error("Network issue: connection reset by peer. Will retry")
+				return false, nil
 			}
 			return false, errors.Wrapf(err, "Failed at waiting for the DeleteSnapshot invocation on IVD Protected Entity, %v, with input arg, %v", this.GetID().String(), snapshotToDelete.String())
 		}
